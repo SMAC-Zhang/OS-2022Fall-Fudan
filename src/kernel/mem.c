@@ -66,7 +66,7 @@ void* kalloc(isize size) {
         ret_addr = kalloc_page();
     }
 
-    for (int i = pos - 1; i > log_size; --i) {
+    for (int i = pos - 1; i >= log_size; --i) {
         add_to_queue(&free_mem[cpuid()][i], (QueueNode*)(ret_addr + (1 << i)) );
     }
 
