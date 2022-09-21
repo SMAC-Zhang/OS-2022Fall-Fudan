@@ -6,7 +6,7 @@
 #include <kernel/printk.h>
 #include <common/defines.h>
 
-
+#define get_page_num(addr)  ((i64)(addr) & 0xfffffffffffff000)
 
 RefCount alloc_page_cnt;
 
@@ -34,16 +34,16 @@ struct my_list_node {
 // or return NULL
 struct my_list_node* add_to_list(struct my_list_node** head, struct my_list_node* node, u64 size) {
     if (*head == NULL) {
+        node->next = NULL;
         *head = node;
-        (*head)->next = NULL;
         return NULL;
     }
 
     if ((u64)(*head) > (u64)node) {
         node->next = *head;
         *head = node;
-        if ((u64)node - (u64)(*head) == size) {
-            *head = (*head)->next;
+        if ((((u64)(node) & size) == 0) && get_page_num((*head)->next) == get_page_num(node) && (u64)((*head)->next) - (u64)(node) == size) {
+            *head = (*head)->next->next;
             return node;
         }
         return NULL;
@@ -64,18 +64,23 @@ struct my_list_node* add_to_list(struct my_list_node** head, struct my_list_node
             prev = prev->next;
         }
     }
-    if ((u64)node - (u64)p == size) {
+    if ((((u64)(p) & size) == 0) && get_page_num(node) == get_page_num(p) && (u64)node - (u64)p == size) {
+        if (p == *head) {
+            *head = node->next;
+            return p;
+        }
         prev->next = node->next;
         return p;
     }
-    if (node->next && (u64)(node->next) - (u64)node == size) {
+    if ((((u64)(node) & size) == 0) && node->next && get_page_num(node) == get_page_num(node->next) && (u64)(node->next) - (u64)node == size) {
         p->next = node->next->next;
         return node;
     }
+    
+    // node->next = (*head);
+    // (*head) = node;
 
     return NULL;
-    // node->next = (*head)->next;
-    // (*head)->next = node;
 }
 
 void wrap_add(struct my_list_node* node, u64 log_size) {
@@ -84,11 +89,13 @@ void wrap_add(struct my_list_node* node, u64 log_size) {
     do {
         if (i == 12) {
             kfree_page(p);
-            break;
+            // static int cnt = 0;
+            // printk("%d ", ++cnt);
+            return;
         }
-        p = add_to_list(&free_list[cpuid()][log_size], p, 1 << i);
+        p = add_to_list(&free_list[cpuid()][i], p, 1 << i);
         i++;
-    } while (p);
+    } while (p != NULL);
 }
 
 struct my_list_node* fetch_from_list(struct my_list_node** head) {
@@ -98,8 +105,8 @@ struct my_list_node* fetch_from_list(struct my_list_node** head) {
         *head = NULL;
         return ret;
     }
-    ret = (*head)->next;
-    (*head)->next = (*head)->next->next;
+    ret = (*head);
+    (*head) = (*head)->next;
     return ret;
 }
 
@@ -118,7 +125,7 @@ void kfree_page(void* p) {
     add_to_queue(&pages, (QueueNode*)p);
 }
 
-i64 __log2(i64 num) {
+u64 __log2(i64 num) {
     i64 ret = 0;
     i64 t = num;
 
@@ -130,13 +137,17 @@ i64 __log2(i64 num) {
         ret--;
     }
 
-    return ret;
+    return (u64)ret;
 }
 
 // TODO: kalloc kfree
 void* kalloc(isize size) {
     size += 8;
-    i64 pos = __log2(size), log_size = __log2(size);
+
+    size = (size + 15) / 16 * 16;
+
+    u64 pos = __log2(size);
+    u64 log_size = __log2(size);
     while (pos < 12 && free_list[cpuid()][pos] == NULL) {
         pos++;
     }
@@ -148,18 +159,39 @@ void* kalloc(isize size) {
         ret_addr = kalloc_page();
     }
 
-    for (int i = pos - 1; i >= log_size; --i) {
-        wrap_add((struct my_list_node*)(ret_addr + (1 << i)), (u64)i);
-        //add_to_list(&free_list[cpuid()][i], (struct my_list_node*)(ret_addr + (1 << i)));
+    void *rest_addr = ret_addr + size;
+    u64 rest_size = (1 << pos) - size;
+    log_size++;
+    for (int i = 0; i < 12; ++i) {
+        if ((rest_size >> i) & 1) {
+            wrap_add((struct my_list_node*)rest_addr, (u64)i);
+            rest_addr += 1 << i;
+        }
     }
+    *((u64*) ret_addr) = size;
 
-    *((i64*) ret_addr) = log_size;
+    // for (int i = pos - 1; i >= (i64)log_size; --i) {
+    //     wrap_add((struct my_list_node*)(ret_addr + (1 << i)), (u64)i);
+    //     //add_to_list(&free_list[cpuid()][i], (struct my_list_node*)(ret_addr + (1 << i)));
+    // }
+    // *((u64*) ret_addr) = log_size;
+    
     return ret_addr + 8;
 }
 
 void kfree(void* p) {
     p -= 8;
-    i64 log_size = *(i64*) (p);
-    wrap_add((struct my_list_node*)p, log_size);
+
+    //u64 log_size = *(u64*) (p);
+    //wrap_add((struct my_list_node*)p, log_size);
+    
     //add_to_list(&free_list[cpuid()][log_size], (struct my_list_node*)p);
+
+    u64 size = *(u64*) (p);
+    for (int i = 11; i >= 0; --i) {
+        if ((size >> i) & 1) {
+            wrap_add((struct my_list_node*)p, i);
+            p += 1 << i;
+        }
+    }
 }
