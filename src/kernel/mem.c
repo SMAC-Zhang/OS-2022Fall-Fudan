@@ -144,7 +144,11 @@ u64 __log2(i64 num) {
 void* kalloc(isize size) {
     size += 8;
 
-    size = (size + 15) / 16 * 16;
+    if ((1 << __log2(size)) - size >= 32) {
+        size = (size + 31) / 32 * 32;
+    } else {
+        size = (size + 7) / 8 * 8;
+    }
 
     u64 pos = __log2(size);
     u64 log_size = __log2(size);
