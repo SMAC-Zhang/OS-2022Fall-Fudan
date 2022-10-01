@@ -23,8 +23,6 @@ define_early_init(init_page) {
     }
 }
 
-
-
 struct my_list_node {
     u64    length;
     struct my_list_node *prev,  *next;
