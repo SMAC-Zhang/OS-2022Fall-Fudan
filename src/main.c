@@ -16,7 +16,6 @@ define_init(put_hello) {
 }
 
 extern char edata[], end[];
-
 NO_RETURN void main() {
     if (cpuid() == 0) {
         memset(edata, 0, end - edata);
