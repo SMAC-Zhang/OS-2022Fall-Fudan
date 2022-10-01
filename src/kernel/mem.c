@@ -6,6 +6,7 @@
 #include <kernel/printk.h>
 #include <common/defines.h>
 #define OBJ_SIZE 16
+
 RefCount alloc_page_cnt;
 
 define_early_init(alloc_page_cnt) {
