@@ -12,11 +12,11 @@ extern bool panic_flag;
 
 extern void swtch(KernelContext* new_ctx, KernelContext** old_ctx);
 
-static SpinLock rqlock;
+static SpinLock sched_lock;
 static ListNode rq;
 
 define_early_init(rq) {
-    init_spinlock(&rqlock);
+    init_spinlock(&sched_lock);
     init_list_node(&rq);
 }
 define_init(sched) {
@@ -40,12 +40,12 @@ void init_schinfo(struct schinfo* p) {
 
 void _acquire_sched_lock() {
     // TODO: acquire the sched_lock if need
-    _acquire_spinlock(&rqlock);
+    _acquire_spinlock(&sched_lock);
 }
 
 void _release_sched_lock() {
     // TODO: release the sched_lock if need
-    _release_spinlock(&rqlock);
+    _release_spinlock(&sched_lock);
 }
 
 bool is_zombie(struct proc* p)
@@ -67,7 +67,7 @@ bool activate_proc(struct proc* p) {
         _release_sched_lock();
         return false;
     }
-
+    
     if (p->state == SLEEPING || p->state == UNUSED) {
         p->state = RUNNABLE;
         _insert_into_list(&rq, &(p->schinfo.rq));
@@ -82,11 +82,9 @@ static void update_this_state(enum procstate new_state) {
     // TODO: if using simple_sched, you should implement this routinue
     // update the state of current process to new_state, and remove it from the sched queue if new_state=SLEEPING/ZOMBIE
     thisproc()->state = new_state;
+    ASSERT(new_state != RUNNING);
     if (new_state == SLEEPING || new_state == ZOMBIE) {
-        _acquire_sched_lock();
         _detach_from_list(&(thisproc()->schinfo.rq));
-        cpus[cpuid()].sched.thisproc = cpus[cpuid()].sched.idle;
-        _release_sched_lock();
     }
 }
 
