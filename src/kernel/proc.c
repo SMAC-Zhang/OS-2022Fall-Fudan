@@ -39,20 +39,19 @@ NO_RETURN void exit(int code) {
     _acquire_spinlock(&ptree_lock);
     auto this = thisproc();
     this->exitcode = code;
-    post_sem(&thisproc()->parent->childexit);
-    
     auto p = (this->children).next;
     while (p != &(this->children)) {
         auto q = p->next;
         _insert_into_list(&(root_proc.children), p);
         auto child = container_of(p, struct proc, ptnode);
-        if (child->state != ZOMBIE) {
-            wait_sem(&(root_proc.childexit));
+        child->parent = &root_proc;
+        if (is_zombie(child)) {
+            activate_proc(&root_proc);
         }
         p = q;
     }
     _release_spinlock(&ptree_lock);
-
+    
     activate_proc(this->parent);
     _acquire_sched_lock();
     _sched(ZOMBIE);
@@ -70,12 +69,14 @@ int wait(int* exitcode) {
         _release_spinlock(&ptree_lock);
         return -1;
     }
+
     while (1) {
         _for_in_list(p, &(thisproc()->children)) {
             auto child = container_of(p, struct proc, ptnode);
-            int ret = child->pid;
             if (is_zombie(child)) {
+                int ret = child->pid;
                 *exitcode = child->exitcode;
+                _detach_from_list(p);
                 kfree(child);
                 _release_spinlock(&ptree_lock);
                 return ret;
