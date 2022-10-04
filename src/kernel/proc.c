@@ -46,13 +46,13 @@ NO_RETURN void exit(int code) {
         auto child = container_of(p, struct proc, ptnode);
         child->parent = &root_proc;
         if (is_zombie(child)) {
-            activate_proc(&root_proc);
+            post_sem(&(root_proc.childexit));
         }
         p = q;
     }
     _release_spinlock(&ptree_lock);
     
-    activate_proc(this->parent);
+    post_sem(&(thisproc()->parent->childexit));
     _acquire_sched_lock();
     _sched(ZOMBIE);
     PANIC(); // prevent the warning of 'no_return function returns'
@@ -84,8 +84,7 @@ int wait(int* exitcode) {
         }
 
         _release_spinlock(&ptree_lock);
-        _acquire_sched_lock();
-        _sched(SLEEPING);
+        wait_sem(&thisproc()->childexit);
         _acquire_spinlock(&ptree_lock);
     }
 }
