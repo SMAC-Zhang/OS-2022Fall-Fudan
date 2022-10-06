@@ -64,30 +64,27 @@ int wait(int* exitcode) {
     // 2. wait for childexit
     // 3. if any child exits, clean it up and return its pid and exitcode
     // NOTE: be careful of concurrency
-    _acquire_spinlock(&ptree_lock);
     if ((thisproc()->children).next == &(thisproc()->children)) {
-        _release_spinlock(&ptree_lock);
         return -1;
     }
 
-    while (1) {
-        _for_in_list(p, &(thisproc()->children)) {
-            auto child = container_of(p, struct proc, ptnode);
-            if (is_zombie(child)) {
-                int ret = child->pid;
-                *exitcode = child->exitcode;
-                _detach_from_list(p);
-                kfree_page(child->kstack);
-                kfree(child);
-                _release_spinlock(&ptree_lock);
-                return ret;
-            }
+    wait_sem(&thisproc()->childexit);
+    _acquire_spinlock(&ptree_lock);
+    _for_in_list(p, &(thisproc()->children)) {
+        auto child = container_of(p, struct proc, ptnode);
+        if (is_zombie(child)) {
+            int ret = child->pid;
+            *exitcode = child->exitcode;
+            _detach_from_list(p);
+            kfree_page(child->kstack);
+            kfree(child);
+            _release_spinlock(&ptree_lock);
+            return ret;
         }
-
-        _release_spinlock(&ptree_lock);
-        wait_sem(&thisproc()->childexit);
-        _acquire_spinlock(&ptree_lock);
     }
+
+    _release_spinlock(&ptree_lock);
+    return -1;
 }
 
 int start_proc(struct proc* p, void(*entry)(u64), u64 arg) {
