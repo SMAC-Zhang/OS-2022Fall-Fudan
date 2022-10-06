@@ -77,6 +77,7 @@ int wait(int* exitcode) {
                 int ret = child->pid;
                 *exitcode = child->exitcode;
                 _detach_from_list(p);
+                kfree_page(child->kstack);
                 kfree(child);
                 _release_spinlock(&ptree_lock);
                 return ret;
