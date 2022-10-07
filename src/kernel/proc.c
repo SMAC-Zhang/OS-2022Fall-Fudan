@@ -51,6 +51,12 @@ NO_RETURN void exit(int code) {
     }
 
     // transfer zombie children to the root_proc
+    // _merge_list(&(root_proc.zombie_children), &(this->zombie_children));
+    // _detach_from_list(root_proc.zombie_children.next);
+    // int sem = get_all_sem(&(this->childexit));
+    // for (int i = 0; i < sem; ++i) {
+    //     post_sem(&(root_proc.childexit));
+    // }
     p = (this->zombie_children).next;
     while (p != &(this->zombie_children)) {
         auto q = p->next;
