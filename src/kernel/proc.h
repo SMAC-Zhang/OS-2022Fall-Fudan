@@ -28,6 +28,7 @@ struct proc
     enum procstate state;
     Semaphore childexit;
     ListNode children;
+    ListNode zombie_children;
     ListNode ptnode;
     struct proc* parent;
     struct schinfo schinfo;

@@ -39,20 +39,34 @@ NO_RETURN void exit(int code) {
     _acquire_spinlock(&ptree_lock);
     auto this = thisproc();
     this->exitcode = code;
+
+    // transfer children to the root_proc
     auto p = (this->children).next;
     while (p != &(this->children)) {
         auto q = p->next;
         _insert_into_list(&(root_proc.children), p);
         auto child = container_of(p, struct proc, ptnode);
         child->parent = &root_proc;
-        if (is_zombie(child)) {
-            post_sem(&(root_proc.childexit));
-        }
         p = q;
     }
-    _release_spinlock(&ptree_lock);
+
+    // transfer zombie children to the root_proc
+    p = (this->zombie_children).next;
+    while (p != &(this->zombie_children)) {
+        auto q = p->next;
+        _insert_into_list(&(root_proc.zombie_children), p);
+        auto child = container_of(p, struct proc, ptnode);
+        child->parent = &root_proc;
+        p = q;
+        post_sem(&(root_proc.childexit));
+    }
     
-    post_sem(&(thisproc()->parent->childexit));
+    // notify parent proc
+    post_sem(&(this->parent->childexit));
+    _detach_from_list(&(this->ptnode));
+    _insert_into_list(&(this->parent->zombie_children), &(this->ptnode));
+    
+    _release_spinlock(&ptree_lock);
     _acquire_sched_lock();
     _sched(ZOMBIE);
     PANIC(); // prevent the warning of 'no_return function returns'
@@ -64,27 +78,27 @@ int wait(int* exitcode) {
     // 2. wait for childexit
     // 3. if any child exits, clean it up and return its pid and exitcode
     // NOTE: be careful of concurrency
-    if ((thisproc()->children).next == &(thisproc()->children)) {
+    _acquire_spinlock(&ptree_lock);
+    auto this = thisproc();
+    if ((this->children).next == &(this->children)
+        && (this->zombie_children).next == &(this->zombie_children)
+    ) {
+        _release_spinlock(&ptree_lock);
         return -1;
     }
-
-    wait_sem(&thisproc()->childexit);
-    _acquire_spinlock(&ptree_lock);
-    _for_in_list(p, &(thisproc()->children)) {
-        auto child = container_of(p, struct proc, ptnode);
-        if (is_zombie(child)) {
-            int ret = child->pid;
-            *exitcode = child->exitcode;
-            _detach_from_list(p);
-            kfree_page(child->kstack);
-            kfree(child);
-            _release_spinlock(&ptree_lock);
-            return ret;
-        }
-    }
-
     _release_spinlock(&ptree_lock);
-    return -1;
+
+    wait_sem(&this->childexit);
+    _acquire_spinlock(&ptree_lock);
+    auto p = (this->zombie_children).next;
+    _detach_from_list(p);
+    auto child = container_of(p, struct proc, ptnode);
+    int ret = child->pid;
+    *exitcode = child->exitcode;
+    kfree_page(child->kstack);
+    kfree(child);
+    _release_spinlock(&ptree_lock);
+    return ret;
 }
 
 int start_proc(struct proc* p, void(*entry)(u64), u64 arg) {
@@ -118,6 +132,7 @@ void init_proc(struct proc* p) {
     init_sem(&p->childexit, 0);
     init_list_node(&p->children);
     init_list_node(&p->ptnode);
+    init_list_node(&p->zombie_children);
     p->kstack = kalloc_page();
     init_schinfo(&p->schinfo);
     p->kcontext = (KernelContext*)((u64)p->kstack + PAGE_SIZE - 16 - sizeof(KernelContext) - sizeof(UserContext));
