@@ -5,14 +5,49 @@
 #include <common/list.h>
 #include <common/string.h>
 #include <kernel/printk.h>
+#define PID_MAX 128 //96
 
 struct proc root_proc;
 
 void kernel_entry();
 void proc_entry();
 
-static int pid;
+static int last_pid = -1;
+static bool pid_map[PID_MAX];
 static SpinLock ptree_lock, pid_lock;
+
+static int alloc_pid() {
+    _acquire_spinlock(&pid_lock);
+    
+    int ret = -1;
+    for (int i = last_pid + 1; i < PID_MAX; ++i) {
+        if (pid_map[i] == false) {
+            ret = i;
+            pid_map[i] = true;
+            break;
+        }
+    }
+    if (ret == -1) {
+        for (int i = 0; i < last_pid; ++i) {
+            if (pid_map[i] == false) {
+                ret = i;
+                pid_map[i] = true;
+                break;
+            }
+        }
+    }
+
+    ASSERT(ret != -1);
+    last_pid = ret;
+    _release_spinlock(&pid_lock);
+    return ret;
+}
+
+static void free_pid(int pid) {
+    _acquire_spinlock(&pid_lock);
+    pid_map[pid] = false;
+    _release_spinlock(&pid_lock);
+}
 
 define_early_init(ptree_lock) {
     init_spinlock(&ptree_lock);
@@ -86,6 +121,8 @@ int wait(int* exitcode) {
     // NOTE: be careful of concurrency
     _acquire_spinlock(&ptree_lock);
     auto this = thisproc();
+
+    // if no children
     if ((this->children).next == &(this->children)
         && (this->zombie_children).next == &(this->zombie_children)
     ) {
@@ -101,8 +138,11 @@ int wait(int* exitcode) {
     auto child = container_of(p, struct proc, ptnode);
     int ret = child->pid;
     *exitcode = child->exitcode;
+    // clear resource
+    free_pid(child->pid);
     kfree_page(child->kstack);
     kfree(child);
+    
     _release_spinlock(&ptree_lock);
     return ret;
 }
@@ -132,9 +172,7 @@ void init_proc(struct proc* p) {
     // setup the struct proc with kstack and pid allocated
     // NOTE: be careful of concurrency
     memset(p, 0, sizeof(*p));
-    _acquire_spinlock(&pid_lock);
-    p->pid = ++pid;
-    _release_spinlock(&pid_lock);
+    p->pid = alloc_pid();
     init_sem(&p->childexit, 0);
     init_list_node(&p->children);
     init_list_node(&p->ptnode);
