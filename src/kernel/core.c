@@ -12,9 +12,9 @@ NO_RETURN void idle_entry() {
         yield();
         if (panic_flag)
             break;
-        // arch_with_trap {
-        //     arch_wfi();
-        // }
+        arch_with_trap {
+            arch_wfi();
+        }
     }
     set_cpu_off();
     arch_stop_cpu();
