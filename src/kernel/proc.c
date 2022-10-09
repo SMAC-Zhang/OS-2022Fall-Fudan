@@ -103,12 +103,12 @@ NO_RETURN void exit(int code) {
     }
     
     // notify parent proc
-    post_sem(&(this->parent->childexit));
     _detach_from_list(&(this->ptnode));
     _insert_into_list(&(this->parent->zombie_children), &(this->ptnode));
+    post_sem(&(this->parent->childexit));
     
-    _release_spinlock(&ptree_lock);
     _acquire_sched_lock();
+    _release_spinlock(&ptree_lock);
     _sched(ZOMBIE);
     PANIC(); // prevent the warning of 'no_return function returns'
 }
