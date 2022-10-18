@@ -14,7 +14,14 @@ void proc_entry();
 
 static int last_pid = -1;
 static bool pid_map[PID_MAX];
-static SpinLock ptree_lock, pid_lock;
+static SpinLock ptree_lock, pid_lock, pid_pcb_lock;
+// a hash from pid to pcb
+static pid_pcb_tree_t pid_pcb;
+bool _cmp_pid_pcb(rb_node lnode,rb_node rnode) {
+    auto lp = container_of(lnode, pid_map_pcb_t, node);
+    auto rp = container_of(rnode, pid_map_pcb_t, node);
+    return lp->pid < rp->pid;
+}
 
 static int alloc_pid() {
     _acquire_spinlock(&pid_lock);
@@ -52,6 +59,7 @@ static void free_pid(int pid) {
 define_early_init(ptree_lock) {
     init_spinlock(&ptree_lock);
     init_spinlock(&pid_lock);
+    init_spinlock(&pid_pcb_lock);
 }
 
 void set_parent_to_this(struct proc* proc) {
@@ -59,6 +67,15 @@ void set_parent_to_this(struct proc* proc) {
     // NOTE: maybe you need to lock the process tree
     // NOTE: it's ensured that the old proc->parent = NULL
     _acquire_spinlock(&ptree_lock);
+    if (proc->parent == NULL) {
+        // insert into rb_tree
+        pid_map_pcb_t *in_node = kalloc(sizeof(pid_map_pcb_t));
+        in_node->pid = proc->pid;
+        in_node->pcb = proc;
+        _acquire_spinlock(&pid_pcb_lock);
+        _rb_insert(&(in_node->node), &pid_pcb.root, _cmp_pid_pcb);
+        _release_spinlock(&pid_pcb_lock);
+    }
     proc->parent = thisproc();
     _insert_into_list(&(thisproc()->children), &(proc->ptnode));
     _release_spinlock(&ptree_lock);
@@ -102,6 +119,8 @@ NO_RETURN void exit(int code) {
         p = q;
         post_sem(&(root_proc.childexit));
     }
+    // free resource
+    free_pgdir(&(this->pgdir));
     
     // notify parent proc
     _detach_from_list(&(this->ptnode));
@@ -139,8 +158,17 @@ int wait(int* exitcode) {
     auto child = container_of(p, struct proc, ptnode);
     int ret = child->pid;
     *exitcode = child->exitcode;
-    // clear resource
+    
+    // erase from rb_tree
+    pid_map_pcb_t del_node = {child->pid, NULL, {0, 0, 0}};
+    _acquire_spinlock(&pid_pcb_lock);
+    auto find_node = _rb_lookup(&(del_node.node), &pid_pcb.root, _cmp_pid_pcb);
+    _rb_erase(find_node, &pid_pcb.root);
+    _release_spinlock(&pid_pcb_lock);
+    kfree(container_of(find_node, pid_map_pcb_t, node));
+    // free pid resource
     free_pid(child->pid);
+
     kfree_page(child->kstack);
     kfree(child);
     
@@ -153,7 +181,27 @@ int kill(int pid)
     // TODO
     // Set the killed flag of the proc to true and return 0.
     // Return -1 if the pid is invalid (proc not found).
+    _acquire_spinlock(&ptree_lock);
     
+    // find from rb_tree 
+    pid_map_pcb_t kill_node = {pid, NULL, {0, 0, 0}};
+    _acquire_spinlock(&pid_pcb_lock);
+    auto find_node = _rb_lookup(&(kill_node.node), &pid_pcb.root, _cmp_pid_pcb);
+    _release_spinlock(&pid_pcb_lock);
+
+    if (find_node == NULL) {
+        _release_spinlock(&ptree_lock);
+        return -1;
+    }
+    auto p = container_of(find_node, pid_map_pcb_t, node);
+    if (is_unused(p->pcb)) {
+        _release_spinlock(&ptree_lock);
+        return -1;
+    }
+    p->pcb->killed = true;
+    activate_proc(p->pcb);
+    _release_spinlock(&ptree_lock);
+    return 0;
 }
 
 int start_proc(struct proc* p, void(*entry)(u64), u64 arg)
@@ -168,6 +216,14 @@ int start_proc(struct proc* p, void(*entry)(u64), u64 arg)
         p->parent = &root_proc;
         _insert_into_list(&root_proc.children, &p->ptnode);
         _release_spinlock(&ptree_lock);
+
+        // insert into rb_tree
+        pid_map_pcb_t *in_node = kalloc(sizeof(pid_map_pcb_t));
+        in_node->pid = p->pid;
+        in_node->pcb = p;
+        _acquire_spinlock(&pid_pcb_lock);
+        _rb_insert(&(in_node->node), &pid_pcb.root, _cmp_pid_pcb);
+        _release_spinlock(&pid_pcb_lock);
     }
     p->kcontext->lr = (u64)&proc_entry;
     p->kcontext->x0 = (u64)entry;
@@ -187,8 +243,10 @@ void init_proc(struct proc* p) {
     init_list_node(&p->children);
     init_list_node(&p->ptnode);
     init_list_node(&p->zombie_children);
-    p->kstack = kalloc_page();
+    init_pgdir(&p->pgdir);
     init_schinfo(&p->schinfo);
+    p->kstack = kalloc_page();
+    memset(p->kstack, 0, PAGE_SIZE);
     p->kcontext = (KernelContext*)((u64)p->kstack + PAGE_SIZE - 16 - sizeof(KernelContext) - sizeof(UserContext));
     p->ucontext = (UserContext*)((u64)p->kstack + PAGE_SIZE - 16 - sizeof(UserContext));
 }

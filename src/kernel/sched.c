@@ -7,6 +7,7 @@
 #include <kernel/cpu.h>
 #include <driver/clock.h>
 #include <common/spinlock.h>
+#include <common/string.h>
 
 extern bool panic_flag;
 
@@ -22,6 +23,7 @@ define_early_init(rq) {
 define_init(sched) {
     for (int i = 0; i < NCPU; i++) {
         struct proc* p = kalloc(sizeof(struct proc));
+        memset(p, 0, sizeof(struct proc));
         p->idle = true;
         p->state = RUNNING;
         cpus[i].sched.thisproc = cpus[i].sched.idle = p;
@@ -61,7 +63,7 @@ bool is_unused(struct proc* p)
 {
     bool r;
     _acquire_sched_lock();
-    r = p->state == ZOMBIE;
+    r = p->state == UNUSED;
     _release_sched_lock();
     return r;
 }
@@ -71,7 +73,16 @@ bool activate_proc(struct proc* p)
     // TODO
     // if the proc->state is RUNNING/RUNNABLE, do nothing
     // if the proc->state if SLEEPING/UNUSED, set the process state to RUNNABLE and add it to the sched queue
+    _acquire_sched_lock();
+    if (p->state == RUNNABLE || p->state == RUNNING || p->state == ZOMBIE) {
+        _release_sched_lock();
+        return false;
+    }
 
+    p->state = RUNNABLE;
+    _insert_into_list(&rq, &(p->schinfo.rq));
+    _release_sched_lock();
+    return true;
 }
 
 static void update_this_state(enum procstate new_state) {
@@ -102,7 +113,7 @@ static struct proc* pick_next() {
 static void update_this_proc(struct proc* p) {
     // TODO: if using simple_sched, you should implement this routinue
     // update thisproc to the choosen process, and reset the clock interrupt if need
-    reset_clock(1);
+    reset_clock(1000);
     cpus[cpuid()].sched.thisproc = p;
 }
 
@@ -111,6 +122,10 @@ static void update_this_proc(struct proc* p) {
 static void simple_sched(enum procstate new_state)
 {
     auto this = thisproc();
+    if (this->killed && new_state != ZOMBIE) {
+        _release_sched_lock();
+        return;
+    }
     ASSERT(this->state == RUNNING);
     update_this_state(new_state);
     auto next = pick_next();
@@ -119,6 +134,7 @@ static void simple_sched(enum procstate new_state)
     next->state = RUNNING;
     if (next != this)
     {
+        attach_pgdir(&next->pgdir);
         swtch(next->kcontext, &this->kcontext);
     }
     _release_sched_lock();
