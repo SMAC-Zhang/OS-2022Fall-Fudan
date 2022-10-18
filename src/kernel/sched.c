@@ -10,7 +10,7 @@
 #include <common/string.h>
 #include <common/defines.h>
 
-static const int prio_to_weight[40]={
+static const int prio_to_weight[40] = {
     /* -20 */ 88761, 71755, 56483, 46273, 36291,
     /* -15 */ 29154, 23254, 18705, 14949, 11916,
     /* -10 */ 9548, 7620, 6100, 4904, 3906,
