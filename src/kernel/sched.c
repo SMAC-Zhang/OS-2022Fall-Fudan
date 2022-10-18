@@ -30,8 +30,8 @@ static SpinLock sched_lock;
 static struct rb_root_ rq;
 static struct timer proc_cpu_timer[NCPU];
 static u64 thisproc_start_time[NCPU];
-static const u64 sched_latency = 22;
-static u64 weight_sum = 88761;
+static const u64 sched_latency = 20;
+static u64 weight_sum = 15;
 
 static bool _ptree_cmp(rb_node lnode, rb_node rnode) {
     auto l = container_of(lnode, struct schinfo, node);
@@ -55,8 +55,8 @@ define_init(sched) {
         p->idle = true;
         p->state = RUNNING;
         cpus[i].sched.thisproc = cpus[i].sched.idle = p;
-        p->schinfo.prio = -20;
-        p->schinfo.weight = prio_to_weight[0];
+        p->schinfo.prio = 39;
+        p->schinfo.weight = prio_to_weight[39];
     }                              
 }
 
@@ -77,7 +77,6 @@ void init_schinfo(struct schinfo* p) {
 
     p->prio = 1;
     p->weight = prio_to_weight[p->prio + 20];
-    weight_sum += p->weight;
 }
 
 void _acquire_sched_lock() {
@@ -121,6 +120,7 @@ bool activate_proc(struct proc* p)
 
     p->state = RUNNABLE;
     _rb_insert(&(p->schinfo.node), &rq, _ptree_cmp);
+    weight_sum += p->schinfo.weight;
     _release_sched_lock();
     return true;
 }
@@ -130,8 +130,12 @@ static void update_this_state(enum procstate new_state) {
     // update the state of current process to new_state, and remove it from the sched queue if new_state=SLEEPING/ZOMBIE
     auto this = thisproc();
     this->state = new_state;
+    this->schinfo.vruntime += (get_timestamp_ms() - thisproc_start_time[cpuid()]) * prio_to_weight[21] / this->schinfo.weight;
     if (this->state == RUNNABLE && this->idle == false) {
         _rb_insert(&(this->schinfo.node), &rq, _ptree_cmp);
+    }
+    if (this->state == ZOMBIE) {
+        weight_sum -= this->schinfo.weight;
     }
 }
 
@@ -160,9 +164,6 @@ static void proc_interrupt() {
 static void update_this_proc(struct proc* p) {
     // TODO: if using simple_sched, you should implement this routinue
     // update thisproc to the choosen process, and reset the clock interrupt if need
-    //if (!thisproc()->idle)
-    auto this = thisproc();
-    this->schinfo.vruntime += (get_timestamp_ms() - thisproc_start_time[cpuid()]) * prio_to_weight[21] / this->schinfo.weight;
     cpus[cpuid()].sched.thisproc = p;
     proc_cpu_timer[cpuid()].elapse = MAX(sched_latency * p->schinfo.weight / weight_sum, (u64)1);
     proc_cpu_timer[cpuid()].handler = proc_interrupt;
