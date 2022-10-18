@@ -15,11 +15,13 @@ extern void swtch(KernelContext* new_ctx, KernelContext** old_ctx);
 
 static SpinLock sched_lock;
 static ListNode rq;
+static struct timer proc_cpu_timer[NCPU];
 
 define_early_init(rq) {
     init_spinlock(&sched_lock);
     init_list_node(&rq);
 }
+
 define_init(sched) {
     for (int i = 0; i < NCPU; i++) {
         struct proc* p = kalloc(sizeof(struct proc));
@@ -110,11 +112,24 @@ static struct proc* pick_next() {
     return cpus[cpuid()].sched.idle;
 }
 
+static void proc_interrupt() {
+    _acquire_sched_lock();
+    _sched(RUNNABLE);
+}
+
 static void update_this_proc(struct proc* p) {
     // TODO: if using simple_sched, you should implement this routinue
     // update thisproc to the choosen process, and reset the clock interrupt if need
-    reset_clock(1000);
+    //if (!thisproc()->idle)
+    auto this = thisproc();
+    if (this->idle == false && this->state == RUNNABLE) {
+        _detach_from_list(&(this->schinfo.rq));
+        _insert_into_list(rq.prev, &(this->schinfo.rq));
+    }
     cpus[cpuid()].sched.thisproc = p;
+    proc_cpu_timer[cpuid()].elapse = 1;
+    proc_cpu_timer[cpuid()].handler = proc_interrupt;
+    set_cpu_timer(&proc_cpu_timer[cpuid()]);
 }
 
 // A simple scheduler.

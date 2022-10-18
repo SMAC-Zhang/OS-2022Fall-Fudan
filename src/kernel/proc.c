@@ -12,7 +12,7 @@ struct proc root_proc;
 void kernel_entry();
 void proc_entry();
 
-// a hash from pid to pcb
+// a map from pid to pcb
 typedef struct pid_map_pcb {
     int pid;
     struct proc* pcb;
