@@ -158,6 +158,7 @@ static struct proc* pick_next() {
 
 static void proc_interrupt() {
     _acquire_sched_lock();
+    proc_cpu_timer[cpuid()].data--;
     _sched(RUNNABLE);
 }
 
@@ -165,9 +166,14 @@ static void update_this_proc(struct proc* p) {
     // TODO: if using simple_sched, you should implement this routinue
     // update thisproc to the choosen process, and reset the clock interrupt if need
     cpus[cpuid()].sched.thisproc = p;
+    if (proc_cpu_timer[cpuid()].data > 0) {
+        cancel_cpu_timer(&proc_cpu_timer[cpuid()]);
+        proc_cpu_timer[cpuid()].data--;
+    }
     proc_cpu_timer[cpuid()].elapse = MAX(sched_latency * p->schinfo.weight / weight_sum, (u64)1);
     proc_cpu_timer[cpuid()].handler = proc_interrupt;
     set_cpu_timer(&proc_cpu_timer[cpuid()]);
+    proc_cpu_timer[cpuid()].data++;
 }
 
 // A simple scheduler.
