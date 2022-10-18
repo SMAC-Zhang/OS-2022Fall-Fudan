@@ -12,16 +12,27 @@ struct proc root_proc;
 void kernel_entry();
 void proc_entry();
 
-static int last_pid = -1;
-static bool pid_map[PID_MAX];
-static SpinLock ptree_lock, pid_lock, pid_pcb_lock;
 // a hash from pid to pcb
-static pid_pcb_tree_t pid_pcb;
-bool _cmp_pid_pcb(rb_node lnode,rb_node rnode) {
+typedef struct pid_map_pcb {
+    int pid;
+    struct proc* pcb;
+    struct rb_node_ node;
+} pid_map_pcb_t;
+
+typedef struct pid_pcb_tree {
+    struct rb_root_ root;
+} pid_pcb_tree_t;
+
+static bool _cmp_pid_pcb(rb_node lnode,rb_node rnode) {
     auto lp = container_of(lnode, pid_map_pcb_t, node);
     auto rp = container_of(rnode, pid_map_pcb_t, node);
     return lp->pid < rp->pid;
 }
+
+static pid_pcb_tree_t pid_pcb;
+static int last_pid = -1;
+static bool pid_map[PID_MAX];
+static SpinLock ptree_lock, pid_lock, pid_pcb_lock;
 
 static int alloc_pid() {
     _acquire_spinlock(&pid_lock);

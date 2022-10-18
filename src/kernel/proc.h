@@ -9,21 +9,11 @@
 
 enum procstate { UNUSED, RUNNABLE, RUNNING, SLEEPING, ZOMBIE };
 
-typedef struct pid_map_pcb {
-    int pid;
-    struct proc* pcb;
-    struct rb_node_ node;
-} pid_map_pcb_t;
-
-typedef struct pid_pcb_tree {
-    struct rb_root_ root;
-} pid_pcb_tree_t;
-
 typedef struct UserContext {
     // TODO: customize your trap frame
     u64 spsr, elr;
-    u64 sp, fuck_gcc;
-    u64 x[18];
+    u64 sp, lr;
+    u64 x[30];
 } UserContext;
 
 typedef struct KernelContext {
