@@ -30,7 +30,7 @@ static bool _cmp_pid_pcb(rb_node lnode,rb_node rnode) {
 }
 
 static pid_pcb_tree_t pid_pcb;
-static int last_pid = -1;
+static int last_pid = 1;
 static bool pid_map[PID_MAX];
 static SpinLock ptree_lock, pid_lock, pid_pcb_lock;
 
@@ -46,7 +46,7 @@ static int alloc_pid() {
         }
     }
     if (ret == -1) {
-        for (int i = 0; i < last_pid; ++i) {
+        for (int i = 1; i < last_pid; ++i) {
             if (pid_map[i] == false) {
                 ret = i;
                 pid_map[i] = true;
