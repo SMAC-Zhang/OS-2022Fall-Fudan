@@ -114,6 +114,7 @@ static struct proc* pick_next() {
 
 static void proc_interrupt() {
     _acquire_sched_lock();
+    proc_cpu_timer[cpuid()].data--;
     _sched(RUNNABLE);
 }
 
@@ -126,10 +127,15 @@ static void update_this_proc(struct proc* p) {
         _detach_from_list(&(this->schinfo.rq));
         _insert_into_list(rq.prev, &(this->schinfo.rq));
     }
+    if (proc_cpu_timer[cpuid()].data > 0) {
+        cancel_cpu_timer(&proc_cpu_timer[cpuid()]);
+        proc_cpu_timer[cpuid()].data--;
+    }
     cpus[cpuid()].sched.thisproc = p;
     proc_cpu_timer[cpuid()].elapse = 1;
     proc_cpu_timer[cpuid()].handler = proc_interrupt;
     set_cpu_timer(&proc_cpu_timer[cpuid()]);
+    proc_cpu_timer[cpuid()].data++;
 }
 
 // A simple scheduler.
