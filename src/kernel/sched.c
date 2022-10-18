@@ -26,6 +26,7 @@ define_init(sched) {
     for (int i = 0; i < NCPU; i++) {
         struct proc* p = kalloc(sizeof(struct proc));
         memset(p, 0, sizeof(struct proc));
+        p->pid = 0;
         p->idle = true;
         p->state = RUNNING;
         cpus[i].sched.thisproc = cpus[i].sched.idle = p;
