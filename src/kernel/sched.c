@@ -67,14 +67,7 @@ struct proc* thisproc() {
 
 void init_schinfo(struct schinfo* p) {
     // TODO: initialize your customized schinfo for every newly-created process
-    auto first = _rb_first(&rq);
-    if (first != NULL) {
-        auto sch = container_of(first, struct schinfo, node);
-        p->vruntime = sch->vruntime;
-    } else {
-        p->vruntime = thisproc()->schinfo.vruntime;
-    }
-
+    p->vruntime = 0;
     p->prio = 1;
     p->weight = prio_to_weight[p->prio + 20];
 }
@@ -116,6 +109,16 @@ bool activate_proc(struct proc* p)
     if (p->state == RUNNABLE || p->state == RUNNING || p->state == ZOMBIE) {
         _release_sched_lock();
         return false;
+    }
+
+    if (p->state == SLEEPING || p->state == UNUSED) {
+        auto first = _rb_first(&rq);
+        if (first != NULL) {
+            auto sch = container_of(first, struct schinfo, node);
+            p->schinfo.vruntime = sch->vruntime;
+        } else {
+            p->schinfo.vruntime = thisproc()->schinfo.vruntime;
+        }
     }
 
     p->state = RUNNABLE;
