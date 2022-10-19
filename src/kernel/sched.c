@@ -113,9 +113,9 @@ static struct proc* pick_next() {
     return cpus[cpuid()].sched.idle;
 }
 
-static void proc_interrupt() {
+static void proc_interrupt(struct timer* t) {
     _acquire_sched_lock();
-    proc_cpu_timer[cpuid()].data--;
+    t->data--;
     _sched(RUNNABLE);
 }
 
