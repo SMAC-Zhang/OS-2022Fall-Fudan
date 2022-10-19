@@ -162,7 +162,9 @@ int wait(int* exitcode) {
     }
     _release_spinlock(&ptree_lock);
 
-    wait_sem(&this->childexit);
+    if (wait_sem(&this->childexit) == false) {
+        return -1;
+    }
     _acquire_spinlock(&ptree_lock);
     auto p = (this->zombie_children).next;
     _detach_from_list(p);
