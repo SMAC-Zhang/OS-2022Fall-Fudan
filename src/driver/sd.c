@@ -201,7 +201,9 @@ void sdrw(buf* b) {
         _release_spinlock(&sd_lock);
     }
     queue_unlock(&buflist);
-    wait_sem(&(b->sem));
+    while (b->flags != B_VALID) {
+        wait_sem(&(b->sem));
+    }
 }
 
 /* SD card test and benchmark. */
