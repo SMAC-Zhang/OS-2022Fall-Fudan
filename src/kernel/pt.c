@@ -50,7 +50,6 @@ PTEntriesPtr get_pte(struct pgdir* pgdir, u64 va, bool alloc)
     PTEntriesPtr pt3 = (PTEntriesPtr)P2K(PTE_ADDRESS(pt2[VA_PART2(va)]));
     if (pt3[VA_PART3(va)] == 0) {
         if (alloc) {
-            pt3[VA_PART3(va)] = K2P(va) | PTE_TABLE;
             return (PTEntriesPtr)(pt3 + VA_PART3(va));
         } else {
             return NULL;
