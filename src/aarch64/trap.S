@@ -20,7 +20,7 @@ pushp(x6, x7)
 pushp(x4, x5)
 pushp(x2, x3)
 pushp(x0, x1)
-add x0, sp, #0xf0
+mrs x0, sp_el0
 pushp(x0, x30)
 mrs x0, spsr_el1
 mrs x1, elr_el1
