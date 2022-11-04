@@ -202,7 +202,7 @@ void sdrw(buf* b) {
     }
     queue_unlock(&buflist);
     while (b->flags != B_VALID) {
-        wait_sem(&(b->sem));
+        if (wait_sem(&(b->sem)));
     }
 }
 
