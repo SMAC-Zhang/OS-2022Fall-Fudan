@@ -140,12 +140,10 @@ static void cache_release(Block* block) {
 
 void log_to_disk() {
     for (u64 i = 0; i < header.num_blocks; ++i) {
-        Block* log_block = cache_acquire(sblock->log_start + i + 1);
-        Block* block = cache_acquire(header.block_no[i]);
-        memmove(block->data, log_block->data, BLOCK_SIZE);
-        device_write(block);
-        cache_release(log_block);
-        cache_release(block);
+        Block log_block = {sblock->log_start + i + 1};
+        device_read(&log_block);
+        log_block.block_no = header.block_no[i];
+        device_write(&log_block);
     }
 }
 
@@ -262,12 +260,9 @@ static void cache_end_op(OpContext* ctx) {
         // 1.Write blocks to log area
         for (u64 i = 0; i < header.num_blocks; ++i) {
             Block* b = cache_acquire(header.block_no[i]);
-            Block* log_block = cache_acquire(sblock->log_start + i + 1);
-            memmove(log_block->data, b->data, BLOCK_SIZE);
-            device_write(log_block);
+            device->write(sblock->log_start + i + 1, b->data);
             b->pinned = false;
             cache_release(b);
-            cache_release(log_block);
         }
         write_header(); // 2.Write log header
         log_to_disk();  // 3.Copy blocks to original locations
