@@ -114,7 +114,6 @@ find_in_cache:
     b = (Block*)kalloc(sizeof(Block));
     // init it
     init_block(b);
-    b->valid = true;
     b->block_no = block_no;
     _insert_into_list(&head, &b->node);
     cached_blocks_num++;
@@ -126,6 +125,7 @@ find_in_cache:
 
     // read from disk
     device_read(b);
+    b->valid = true;
     return b;
 }
 
