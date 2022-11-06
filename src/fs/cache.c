@@ -182,6 +182,7 @@ static void cache_begin_op(OpContext* ctx) {
         if (log.committing) {
             _lock_sem(&(log.sem));
             _release_spinlock(&(log.lock));
+            // unalertablewait
             if (_wait_sem(&(log.sem), false) == false) {
                 PANIC();
             }
@@ -189,6 +190,7 @@ static void cache_begin_op(OpContext* ctx) {
         } else if (log.used + OP_MAX_NUM_BLOCKS > log.log_max_num) {
             _lock_sem(&(log.sem));
             _release_spinlock(&(log.lock));
+            // unalertablewait
             if (_wait_sem(&(log.sem), false) == false) {
                 PANIC();
             }
@@ -258,6 +260,7 @@ static void cache_end_op(OpContext* ctx) {
     if (log.outstanding > 0) {
         _lock_sem(&(log.outstanding_sem));
         _release_spinlock(&(log.lock));
+        // unalertablewait
         if (_wait_sem(&(log.outstanding_sem), false) == false) {
             PANIC();
         };
