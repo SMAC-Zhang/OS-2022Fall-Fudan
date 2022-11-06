@@ -86,10 +86,7 @@ find_in_cache:
     if (in_cache) {
         if (b->acquired == true) {
             _release_spinlock(&lock);
-            // if kill goto find again
-            if (wait_sem(&b->lock) == false) {
-                PANIC();
-            }
+            unalertable_wait_sem(&b->lock);
             goto find_in_cache; // find again to guarantee it is valid
         }
 
@@ -185,14 +182,14 @@ static void cache_begin_op(OpContext* ctx) {
         if (log.committing) {
             _lock_sem(&(log.sem));
             _release_spinlock(&(log.lock));
-            if (_wait_sem(&(log.sem), true) == false) {
+            if (_wait_sem(&(log.sem), false) == false) {
                 PANIC();
             }
             _acquire_spinlock(&(log.lock));
         } else if (log.used + OP_MAX_NUM_BLOCKS > log.log_max_num) {
             _lock_sem(&(log.sem));
             _release_spinlock(&(log.lock));
-            if (_wait_sem(&(log.sem), true) == false) {
+            if (_wait_sem(&(log.sem), false) == false) {
                 PANIC();
             }
             _acquire_spinlock(&(log.lock));
@@ -261,7 +258,7 @@ static void cache_end_op(OpContext* ctx) {
     if (log.outstanding > 0) {
         _lock_sem(&(log.outstanding_sem));
         _release_spinlock(&(log.lock));
-        if (_wait_sem(&(log.outstanding_sem), true) == false) {
+        if (_wait_sem(&(log.outstanding_sem), false) == false) {
             PANIC();
         };
         return;

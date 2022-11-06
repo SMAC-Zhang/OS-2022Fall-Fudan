@@ -202,9 +202,7 @@ void sdrw(buf* b) {
     }
     queue_unlock(&buflist);
     while (b->flags != B_VALID) {
-        if (wait_sem(&(b->sem)) == false) {
-            PANIC();
-        }
+        unalertable_wait_sem(&(b->sem));
     }
 }
 
