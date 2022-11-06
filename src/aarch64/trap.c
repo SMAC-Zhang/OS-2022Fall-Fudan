@@ -50,7 +50,7 @@ void trap_global_handler(UserContext* context)
 
     // TODO: stop killed process while returning to user space
     u32 sp_sr = thisproc()->ucontext->spsr;
-    sp_sr = (sp_sr << 27) >> 27;
+    sp_sr = sp_sr & 0x1f;
     if (thisproc()->killed == true && sp_sr != 0b10000) {
         // printk("!!!%d\n", thisproc()->pid);
         exit(-1);
