@@ -110,14 +110,18 @@ bool _activate_proc(struct proc* p, bool onalert)
     // if the proc->state is SLEEPING/UNUSED, set the process state to RUNNABLE, add it to the sched queue, and return true
     // if the proc->state is DEEPSLEEING, do nothing if onalert or activate it if else, and return the corresponding value.
     _acquire_sched_lock();
+    
+    // up kill proc's prio
+    if (onalert) {
+        p->schinfo.prio = -20;
+        p->schinfo.weight = prio_to_weight[p->schinfo.prio + 20];
+    }
     if (p->state == RUNNABLE || p->state == RUNNING || p->state == ZOMBIE) {
         _release_sched_lock();
         return false;
     }
 
     if (p->state == DEEPSLEEPING && onalert) {
-        p->schinfo.prio = -20;
-        p->schinfo.weight = prio_to_weight[p->schinfo.prio + 20];
         _release_sched_lock();
         return false;
     }
