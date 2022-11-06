@@ -86,7 +86,9 @@ find_in_cache:
     if (in_cache) {
         if (b->acquired == true) {
             _release_spinlock(&lock);
-            wait_sem(&b->lock);
+            if (wait_sem(&b->lock) == false) {
+                PANIC();
+            }
             goto find_in_cache; // find again to guarantee it is valid
         }
 
@@ -140,7 +142,9 @@ static void cache_release(Block* block) {
 
 void log_to_disk() {
     for (u64 i = 0; i < header.num_blocks; ++i) {
-        Block log_block = {sblock->log_start + i + 1};
+        Block log_block;
+        init_block(&log_block);
+        log_block.block_no = sblock->log_start + i + 1;
         device_read(&log_block);
         log_block.block_no = header.block_no[i];
         device_write(&log_block);
@@ -180,12 +184,16 @@ static void cache_begin_op(OpContext* ctx) {
         if (log.committing) {
             _lock_sem(&(log.sem));
             _release_spinlock(&(log.lock));
-            _wait_sem(&(log.sem), true);
+            if (_wait_sem(&(log.sem), true) == false) {
+                PANIC();
+            }
             _acquire_spinlock(&(log.lock));
         } else if (log.used + OP_MAX_NUM_BLOCKS > log.log_max_num) {
             _lock_sem(&(log.sem));
             _release_spinlock(&(log.lock));
-            _wait_sem(&(log.sem), true);
+            if (_wait_sem(&(log.sem), true) == false) {
+                PANIC();
+            }
             _acquire_spinlock(&(log.lock));
         } else {
             log.outstanding++;
@@ -252,7 +260,9 @@ static void cache_end_op(OpContext* ctx) {
     if (log.outstanding > 0) {
         _lock_sem(&(log.outstanding_sem));
         _release_spinlock(&(log.lock));
-        _wait_sem(&(log.outstanding_sem), true);
+        if (_wait_sem(&(log.outstanding_sem), true) == false) {
+            PANIC();
+        };
         return;
     }
     if (log.outstanding == 0) { // checkpoints

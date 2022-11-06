@@ -26,13 +26,9 @@ NO_RETURN void kernel_entry() {
 
     sd_init();
     sd_test();
-    // for (int i = 0; i < 2; ++i) {
-    //     auto p = create_proc();
-    //     start_proc(p, sd_test, 0);
-    // }
-    // proc_test();
-    // vm_test();
-    // user_proc_test();
+    proc_test();
+    vm_test();
+    user_proc_test();
     do_rest_init();
     while (1)
         yield();

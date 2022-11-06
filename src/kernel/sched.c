@@ -39,7 +39,10 @@ static bool _ptree_cmp(rb_node lnode, rb_node rnode) {
     if (l->vruntime == r->vruntime) {
         auto lproc = container_of(l, struct proc, schinfo);
         auto rproc = container_of(r, struct proc, schinfo);
-        return lproc->pid < rproc->pid;
+        if (lproc->schinfo.prio == rproc->schinfo.prio) {
+            return lproc->pid < rproc->pid;
+        }
+        return lproc->schinfo.prio < rproc->schinfo.prio;
     }
     return l->vruntime < r->vruntime;
 }
@@ -55,8 +58,8 @@ define_init(sched) {
         p->idle = true;
         p->state = RUNNING;
         cpus[i].sched.thisproc = cpus[i].sched.idle = p;
-        p->schinfo.prio = 39;
-        p->schinfo.weight = prio_to_weight[39];
+        p->schinfo.prio = 19;
+        p->schinfo.weight = prio_to_weight[19 + 20];
     }                              
 }
 
@@ -106,15 +109,20 @@ bool _activate_proc(struct proc* p, bool onalert)
     // if the proc->state is RUNNING/RUNNABLE, do nothing and return false
     // if the proc->state is SLEEPING/UNUSED, set the process state to RUNNABLE, add it to the sched queue, and return true
     // if the proc->state is DEEPSLEEING, do nothing if onalert or activate it if else, and return the corresponding value.
-    // if the proc->state is RUNNING/RUNNABLE, do nothing
-    // if the proc->state if SLEEPING/UNUSED, set the process state to RUNNABLE and add it to the sched queue
     _acquire_sched_lock();
     if (p->state == RUNNABLE || p->state == RUNNING || p->state == ZOMBIE) {
         _release_sched_lock();
         return false;
     }
 
-    if (p->state == SLEEPING || p->state == UNUSED) {
+    if (p->state == DEEPSLEEPING && onalert) {
+        p->schinfo.prio = -20;
+        p->schinfo.weight = prio_to_weight[p->schinfo.prio + 20];
+        _release_sched_lock();
+        return false;
+    }
+
+    if (p->state == SLEEPING || p->state == UNUSED || p->state == DEEPSLEEPING) {
         auto first = _rb_first(&rq);
         if (first != NULL) {
             auto sch = container_of(first, struct schinfo, node);
@@ -125,7 +133,7 @@ bool _activate_proc(struct proc* p, bool onalert)
     }
 
     p->state = RUNNABLE;
-    _rb_insert(&(p->schinfo.node), &rq, _ptree_cmp);
+    ASSERT(_rb_insert(&(p->schinfo.node), &rq, _ptree_cmp) == 0);
     weight_sum += p->schinfo.weight;
     _release_sched_lock();
     return true;
@@ -138,7 +146,7 @@ static void update_this_state(enum procstate new_state) {
     this->state = new_state;
     this->schinfo.vruntime += (get_timestamp_ms() - thisproc_start_time[cpuid()]) * prio_to_weight[21] / this->schinfo.weight;
     if (this->state == RUNNABLE && this->idle == false) {
-        _rb_insert(&(this->schinfo.node), &rq, _ptree_cmp);
+        ASSERT(_rb_insert(&(this->schinfo.node), &rq, _ptree_cmp) == 0);
     }
     if (this->state == ZOMBIE) {
         weight_sum -= this->schinfo.weight;

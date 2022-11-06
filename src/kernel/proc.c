@@ -84,7 +84,7 @@ void set_parent_to_this(struct proc* proc) {
         in_node->pid = proc->pid;
         in_node->pcb = proc;
         _acquire_spinlock(&pid_pcb_lock);
-        _rb_insert(&(in_node->node), &pid_pcb.root, _cmp_pid_pcb);
+        ASSERT(_rb_insert(&(in_node->node), &pid_pcb.root, _cmp_pid_pcb) == 0);
         _release_spinlock(&pid_pcb_lock);
     }
     proc->parent = thisproc();
@@ -212,7 +212,7 @@ int kill(int pid)
         return -1;
     }
     p->pcb->killed = true;
-    activate_proc(p->pcb);
+    alert_proc(p->pcb);
     _release_spinlock(&ptree_lock);
     return 0;
 }
@@ -235,7 +235,7 @@ int start_proc(struct proc* p, void(*entry)(u64), u64 arg)
         in_node->pid = p->pid;
         in_node->pcb = p;
         _acquire_spinlock(&pid_pcb_lock);
-        _rb_insert(&(in_node->node), &pid_pcb.root, _cmp_pid_pcb);
+        ASSERT(_rb_insert(&(in_node->node), &pid_pcb.root, _cmp_pid_pcb) == 0);
         _release_spinlock(&pid_pcb_lock);
     }
     p->kcontext->lr = (u64)&proc_entry;
