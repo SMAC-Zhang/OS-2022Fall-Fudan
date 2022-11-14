@@ -62,6 +62,9 @@ define_init(sched) {
         p->schinfo.weight = prio_to_weight[19 + 20];
     }                              
 }
+void init_schinfo(struct schinfo* p, bool group)
+{
+    // TODO: initialize your customized schinfo for every newly-created process
 
 struct proc* thisproc() {
     // TODO: return the current process
@@ -143,7 +146,14 @@ bool _activate_proc(struct proc* p, bool onalert)
     return true;
 }
 
-static void update_this_state(enum procstate new_state) {
+void activate_group(struct container* group)
+{
+    // TODO: add the schinfo node of the group to the schqueue of its parent
+
+}
+
+static void update_this_state(enum procstate new_state)
+{
     // TODO: if using simple_sched, you should implement this routinue
     // update the state of current process to new_state, and remove it from the sched queue if new_state=SLEEPING/ZOMBIE
     auto this = thisproc();

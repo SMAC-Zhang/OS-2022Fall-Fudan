@@ -19,3 +19,10 @@ struct schinfo {
     int weight;
     struct rb_node_ node;
 };
+
+// embedded data for containers
+struct schqueue
+{
+    // TODO: customize your sched queue
+    
+};
