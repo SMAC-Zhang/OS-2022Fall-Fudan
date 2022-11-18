@@ -17,12 +17,15 @@ struct schinfo {
     u64 vruntime;
     int prio;
     int weight;
+    bool group;
     struct rb_node_ node;
+    bool is_in_queue;
 };
 
 // embedded data for containers
-struct schqueue
-{
+struct schqueue {
     // TODO: customize your sched queue
-    
+    struct rb_root_ rq;
+    u64 weight_sum;
+    u64 sched_latency;
 };

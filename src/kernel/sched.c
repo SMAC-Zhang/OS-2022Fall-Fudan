@@ -22,32 +22,28 @@ static const int prio_to_weight[40] = {
 };
 
 extern bool panic_flag;
+extern struct container root_container;
 
 extern void swtch(KernelContext* new_ctx, KernelContext** old_ctx);
 
 static SpinLock sched_lock;
-//static ListNode rq;
-static struct rb_root_ rq;
 static struct timer proc_cpu_timer[NCPU];
 static u64 thisproc_start_time[NCPU];
-static const u64 sched_latency = 20;
-static u64 weight_sum = 15;
+static const u64 sched_latency = 22;
 
 static bool _ptree_cmp(rb_node lnode, rb_node rnode) {
     auto l = container_of(lnode, struct schinfo, node);
     auto r = container_of(rnode, struct schinfo, node);
     if (l->vruntime == r->vruntime) {
-        auto lproc = container_of(l, struct proc, schinfo);
-        auto rproc = container_of(r, struct proc, schinfo);
-        if (lproc->schinfo.prio == rproc->schinfo.prio) {
-            return lproc->pid < rproc->pid;
+        if (l->prio == r->prio) {
+            return (u64)(lnode) < (u64)(rnode);
         }
-        return lproc->schinfo.prio < rproc->schinfo.prio;
+        return l->prio < r->prio;
     }
     return l->vruntime < r->vruntime;
 }
 
-define_early_init(rq) {
+define_early_init(sched_lock) {
     init_spinlock(&sched_lock);
 }
 
@@ -62,20 +58,23 @@ define_init(sched) {
         p->schinfo.weight = prio_to_weight[19 + 20];
     }                              
 }
-void init_schinfo(struct schinfo* p, bool group)
-{
-    // TODO: initialize your customized schinfo for every newly-created process
 
 struct proc* thisproc() {
     // TODO: return the current process
     return cpus[cpuid()].sched.thisproc;
 }
 
-void init_schinfo(struct schinfo* p) {
+void init_schinfo(struct schinfo* p, bool group) {
     // TODO: initialize your customized schinfo for every newly-created process
     p->vruntime = 0;
     p->prio = 1;
     p->weight = prio_to_weight[p->prio + 20];
+    p->group = group;
+    p->is_in_queue = false;
+}
+
+void init_schqueue(struct schqueue* sq) {
+    sq->weight_sum = 0;
 }
 
 void _acquire_sched_lock() {
@@ -113,35 +112,45 @@ bool _activate_proc(struct proc* p, bool onalert)
     // if the proc->state is SLEEPING/UNUSED, set the process state to RUNNABLE, add it to the sched queue, and return true
     // if the proc->state is DEEPSLEEING, do nothing if onalert or activate it if else, and return the corresponding value.
     _acquire_sched_lock();
-    
-    // up kill proc's prio
-    if (onalert) {
-        p->schinfo.prio = -20;
-        p->schinfo.weight = prio_to_weight[p->schinfo.prio + 20];
-    }
     if (p->state == RUNNABLE || p->state == RUNNING || p->state == ZOMBIE) {
         _release_sched_lock();
         return false;
     }
-
+    
     if (p->state == DEEPSLEEPING && onalert) {
         _release_sched_lock();
         return false;
     }
 
+    // set vruntime
+    struct container* group = p->container;
+    struct rb_root_* rq = &(group->schqueue.rq);
     if (p->state == SLEEPING || p->state == UNUSED || p->state == DEEPSLEEPING) {
-        auto first = _rb_first(&rq);
+        auto first = _rb_first(rq);
         if (first != NULL) {
             auto sch = container_of(first, struct schinfo, node);
             p->schinfo.vruntime = sch->vruntime;
         } else {
-            p->schinfo.vruntime = thisproc()->schinfo.vruntime;
+            // if p and thisproc belong to the same container
+            if (thisproc()->container == p->container) {
+                p->schinfo.vruntime = thisproc()->schinfo.vruntime;
+            } else {
+                p->schinfo.vruntime = 0;
+            }
         }
     }
 
     p->state = RUNNABLE;
-    ASSERT(_rb_insert(&(p->schinfo.node), &rq, _ptree_cmp) == 0);
-    weight_sum += p->schinfo.weight;
+    ASSERT(_rb_insert(&(p->schinfo.node), rq, _ptree_cmp) == 0);
+    p->schinfo.is_in_queue = true;
+    p->container->schqueue.weight_sum += p->schinfo.weight;
+    while (group->schinfo.is_in_queue == false && group != &root_container) {
+        auto gparent = group->parent;
+        ASSERT(_rb_insert(&(group->schinfo.node), &(gparent->schqueue.rq), _ptree_cmp) == 0);
+        group->schinfo.is_in_queue = true;
+        gparent->schqueue.weight_sum += group->schinfo.weight;
+        group = gparent;
+    }
     _release_sched_lock();
     return true;
 }
@@ -149,7 +158,31 @@ bool _activate_proc(struct proc* p, bool onalert)
 void activate_group(struct container* group)
 {
     // TODO: add the schinfo node of the group to the schqueue of its parent
+    _acquire_sched_lock();
+    struct schinfo* g_schinfo = &(group->schinfo);
+    struct schqueue* gparent_schqueue = &(group->parent->schqueue);
+    struct rb_root_* rq = &(gparent_schqueue->rq);
+    
+    // set vruntime
+    auto first = _rb_first(rq);
+    if (first != NULL) {
+        auto sch = container_of(first, struct schinfo, node);
+        g_schinfo->vruntime = sch->vruntime;
+    } else {
+        // if group and thisproc belong to the same container
+        if (thisproc()->container == group->parent) {
+            g_schinfo->vruntime = thisproc()->schinfo.vruntime;
+        } else {
+            g_schinfo->vruntime = 0;
+        }
+    }
 
+    if (group->schinfo.is_in_queue == false) {
+        ASSERT(_rb_insert(&(g_schinfo->node), rq, _ptree_cmp) == 0);
+        group->schinfo.is_in_queue = true;
+    }
+    gparent_schqueue->weight_sum += g_schinfo->weight;
+    _release_sched_lock();
 }
 
 static void update_this_state(enum procstate new_state)
@@ -158,26 +191,73 @@ static void update_this_state(enum procstate new_state)
     // update the state of current process to new_state, and remove it from the sched queue if new_state=SLEEPING/ZOMBIE
     auto this = thisproc();
     this->state = new_state;
-    this->schinfo.vruntime += (get_timestamp_ms() - thisproc_start_time[cpuid()]) * prio_to_weight[21] / this->schinfo.weight;
-    if (this->state == RUNNABLE && this->idle == false) {
-        ASSERT(_rb_insert(&(this->schinfo.node), &rq, _ptree_cmp) == 0);
+    
+    // add vruntime
+    u64 deltaT = (get_timestamp_ms() - thisproc_start_time[cpuid()]) * prio_to_weight[21] / this->schinfo.weight;
+    this->schinfo.vruntime += deltaT;
+    if (this->idle == false) {
+        auto group = this->container;
+        while (group != &root_container) {
+            auto gparent = group->parent;
+            if (group->schinfo.is_in_queue) {
+                _rb_erase(&(group->schinfo.node), &(gparent->schqueue.rq));
+                group->schinfo.is_in_queue = false;
+                group->schinfo.vruntime += deltaT;
+                ASSERT(_rb_insert(&(group->schinfo.node), &(gparent->schqueue.rq), _ptree_cmp) == 0);
+                group->schinfo.is_in_queue = true;
+            } else {
+                group->schinfo.vruntime += deltaT;
+            }
+            group = group->parent; 
+        }
     }
-    if (this->state == ZOMBIE) {
-        weight_sum -= this->schinfo.weight;
+
+    if (this->state == RUNNABLE && this->idle == false) {
+        ASSERT(_rb_insert(&(this->schinfo.node), &(this->container->schqueue.rq), _ptree_cmp) == 0);
+        auto group = this->container;
+        while (group != &root_container && group->schinfo.is_in_queue == false) {
+            auto gparent = group->parent;
+            ASSERT(_rb_insert(&(group->schinfo.node), &(gparent->schqueue.rq), _ptree_cmp) == 0);
+            group->schinfo.is_in_queue = true;
+            group = gparent; 
+        }
+    }
+    if (this->state == ZOMBIE || this->state == SLEEPING) {
+        this->container->schqueue.weight_sum -= this->schinfo.weight;
     }
 }
 
 static struct proc* pick_next() {
     // TODO: if using simple_sched, you should implement this routinue
     // choose the next process to run, and return idle if no runnable process
-    auto p = _rb_first(&rq);
+    
+    auto group = &root_container;
+    struct rb_root_* rq = &(group->schqueue.rq);
+    auto p = _rb_first(rq);
+    auto sch = container_of(p, struct schinfo, node);
+    while (p != NULL && sch->group) {
+        group = container_of(sch, struct container, schinfo);
+        rq = &(group->schqueue.rq);
+        p = _rb_first(rq);
+        while (group != &root_container && p == NULL) {
+            auto gparent = group->parent;
+            rq = &(gparent->schqueue.rq);
+            _rb_erase(_rb_first(rq), rq);
+            group->schinfo.is_in_queue = false;
+            p = _rb_first(rq);
+            group = gparent;
+        }
+        sch = container_of(p, struct schinfo, node);
+    }
+
     if (p != NULL) {
-        _rb_erase(p, &rq);
-        auto sch = container_of(p, struct schinfo, node);
+        _rb_erase(p, rq);
+        sch->is_in_queue = false;
         auto ret = container_of(sch, struct proc, schinfo);
         ASSERT(ret->state == RUNNABLE);
         return ret;
     }
+
     if (thisproc()->state == RUNNABLE) {
         return thisproc();
     }
@@ -198,7 +278,12 @@ static void update_this_proc(struct proc* p) {
         cancel_cpu_timer(&proc_cpu_timer[cpuid()]);
         proc_cpu_timer[cpuid()].data--;
     }
-    proc_cpu_timer[cpuid()].elapse = MAX(sched_latency * p->schinfo.weight / weight_sum, (u64)1);
+    if (p->idle == false) {
+        proc_cpu_timer[cpuid()].elapse = MAX(sched_latency * p->schinfo.weight / p->container->schqueue.weight_sum, (u64)1);
+        proc_cpu_timer[cpuid()].elapse = 2;
+    } else {
+        proc_cpu_timer[cpuid()].elapse = 1;
+    }
     proc_cpu_timer[cpuid()].handler = proc_interrupt;
     set_cpu_timer(&proc_cpu_timer[cpuid()]);
     proc_cpu_timer[cpuid()].data++;

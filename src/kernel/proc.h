@@ -6,6 +6,7 @@
 #include <kernel/schinfo.h>
 #include <kernel/pt.h>
 #include <kernel/container.h>
+#include <common/spinlock.h>
 
 enum procstate { UNUSED, RUNNABLE, RUNNING, SLEEPING, DEEPSLEEPING, ZOMBIE };
 

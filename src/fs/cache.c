@@ -268,6 +268,7 @@ static void cache_end_op(OpContext* ctx) {
     }
     if (log.outstanding == 0) { // checkpoints
         log.committing = true;
+        _release_spinlock(&(log.lock));
         // 1.Write blocks to log area
         for (u64 i = 0; i < header.num_blocks; ++i) {
             Block* b = cache_acquire(header.block_no[i]);
@@ -279,6 +280,7 @@ static void cache_end_op(OpContext* ctx) {
         log_to_disk();  // 3.Copy blocks to original locations
         header.num_blocks = 0;
         write_header(); // 4.reset log
+        _acquire_spinlock(&(log.lock));
         log.used = 0;
         log.committing = false;
         post_all_sem(&(log.sem));

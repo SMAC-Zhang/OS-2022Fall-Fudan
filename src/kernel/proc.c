@@ -5,9 +5,9 @@
 #include <common/list.h>
 #include <common/string.h>
 #include <kernel/printk.h>
-#define PID_MAX 128 //96
 
 struct proc root_proc;
+extern struct container root_container;
 
 void kernel_entry();
 void proc_entry();
@@ -23,53 +23,57 @@ typedef struct pid_pcb_tree {
     struct rb_root_ root;
 } pid_pcb_tree_t;
 
-static bool _cmp_pid_pcb(rb_node lnode,rb_node rnode) {
+static bool _cmp_pid_pcb(rb_node lnode, rb_node rnode) {
     auto lp = container_of(lnode, pid_map_pcb_t, node);
     auto rp = container_of(rnode, pid_map_pcb_t, node);
     return lp->pid < rp->pid;
 }
 
 static pid_pcb_tree_t pid_pcb;
-static int last_pid = 1;
-static bool pid_map[PID_MAX];
-static SpinLock ptree_lock, pid_lock, pid_pcb_lock;
+static pid_bitmap_t global_pid;
+static SpinLock ptree_lock, pid_pcb_lock;
 
-static int alloc_pid() {
-    _acquire_spinlock(&pid_lock);
-    
+static int alloc_pid(pid_bitmap_t* pid_bitmap) {
+    _acquire_spinlock(&(pid_bitmap->pid_lock)); 
     int ret = -1;
-    for (int i = last_pid + 1; i < PID_MAX; ++i) {
-        if (pid_map[i] == false) {
+    for (int i = pid_bitmap->last_pid + 1; i < pid_bitmap->size; ++i) {
+        if (bitmap_get(pid_bitmap->bitmap, i) == false) {
             ret = i;
-            pid_map[i] = true;
+            bitmap_set(pid_bitmap->bitmap, i);
             break;
         }
     }
     if (ret == -1) {
-        for (int i = 1; i < last_pid; ++i) {
-            if (pid_map[i] == false) {
+        for (int i = 1; i < pid_bitmap->last_pid; ++i) {
+            if (bitmap_get(pid_bitmap->bitmap, i) == false) {
                 ret = i;
-                pid_map[i] = true;
+                bitmap_set(pid_bitmap->bitmap, i);
                 break;
             }
         }
     }
-
     ASSERT(ret != -1);
-    last_pid = ret;
-    _release_spinlock(&pid_lock);
+    pid_bitmap->last_pid = ret;
+    _release_spinlock(&(pid_bitmap->pid_lock));
     return ret;
 }
 
-static void free_pid(int pid) {
-    _acquire_spinlock(&pid_lock);
-    pid_map[pid] = false;
-    _release_spinlock(&pid_lock);
+static void free_pid(pid_bitmap_t* pid_bitmap, int pid) {
+    _acquire_spinlock(&(pid_bitmap->pid_lock));
+    bitmap_clear(pid_bitmap->bitmap, pid);
+    _release_spinlock(&(pid_bitmap->pid_lock));
+}
+
+define_early_init(global_pid) {
+    init_spinlock(&(global_pid.pid_lock));
+    memset(global_pid.bitmap, 0, MAX_PID / 8);
+    bitmap_set(global_pid.bitmap, 0);
+    global_pid.last_pid = 0;
+    global_pid.size = MAX_PID / 8;
 }
 
 define_early_init(ptree_lock) {
     init_spinlock(&ptree_lock);
-    init_spinlock(&pid_lock);
     init_spinlock(&pid_pcb_lock);
 }
 
@@ -102,33 +106,28 @@ NO_RETURN void exit(int code) {
     // NOTE: be careful of concurrency
     _acquire_spinlock(&ptree_lock);
     auto this = thisproc();
+    ASSERT(this != this->container->rootproc && !this->idle); 
     this->exitcode = code;
-
-    // transfer children to the root_proc
+    // transfer children to thisproc's container's rootproc
     auto p = (this->children).next;
+    struct proc* rp = this->container->rootproc;
     while (p != &(this->children)) {
         auto q = p->next;
-        _insert_into_list(&(root_proc.children), p);
+        _insert_into_list(&(rp->children), p);
         auto child = container_of(p, struct proc, ptnode);
-        child->parent = &root_proc;
+        child->parent = rp;
         p = q;
     }
 
-    // transfer zombie children to the root_proc
-    // _merge_list(&(root_proc.zombie_children), &(this->zombie_children));
-    // _detach_from_list(root_proc.zombie_children.next);
-    // int sem = get_all_sem(&(this->childexit));
-    // for (int i = 0; i < sem; ++i) {
-    //     post_sem(&(root_proc.childexit));
-    // }
+    // transfer zombie children to thisproc's container's rootproc
     p = (this->zombie_children).next;
     while (p != &(this->zombie_children)) {
         auto q = p->next;
-        _insert_into_list(&(root_proc.zombie_children), p);
+        _insert_into_list(&(rp->zombie_children), p);
         auto child = container_of(p, struct proc, ptnode);
-        child->parent = &root_proc;
+        child->parent = rp;
         p = q;
-        post_sem(&(root_proc.childexit));
+        post_sem(&(rp->childexit));
     }
     // free resource
     free_pgdir(&(this->pgdir));
@@ -170,7 +169,7 @@ int wait(int* exitcode, int* pid)
     auto p = (this->zombie_children).next;
     _detach_from_list(p);
     auto child = container_of(p, struct proc, ptnode);
-    int ret = child->pid;
+    *pid = child->pid;
     *exitcode = child->exitcode;
     
     // erase from rb_tree
@@ -180,8 +179,11 @@ int wait(int* exitcode, int* pid)
     _rb_erase(find_node, &pid_pcb.root);
     _release_spinlock(&pid_pcb_lock);
     kfree(container_of(find_node, pid_map_pcb_t, node));
+    
+    int ret = child->localpid;
     // free pid resource
-    free_pid(child->pid);
+    free_pid(&global_pid, child->pid);
+    free_pid(&(this->container->local_pid), child->localpid);
 
     kfree_page(child->kstack);
     kfree(child);
@@ -242,7 +244,8 @@ int start_proc(struct proc* p, void(*entry)(u64), u64 arg)
     p->kcontext->lr = (u64)&proc_entry;
     p->kcontext->x0 = (u64)entry;
     p->kcontext->x1 = (u64)arg;
-    int id = p->pid;
+    p->localpid = alloc_pid(&(p->container->local_pid));
+    int id = p->localpid;
     activate_proc(p);
     return id;
 }
@@ -252,14 +255,15 @@ void init_proc(struct proc* p) {
     // setup the struct proc with kstack and pid allocated
     // NOTE: be careful of concurrency
     memset(p, 0, sizeof(*p));
-    p->pid = alloc_pid();
+    p->pid = alloc_pid(&global_pid);
     init_sem(&p->childexit, 0);
     init_list_node(&p->children);
     init_list_node(&p->ptnode);
     init_list_node(&p->zombie_children);
     init_pgdir(&p->pgdir);
-    init_schinfo(&p->schinfo);
+    init_schinfo(&p->schinfo, false);
     p->kstack = kalloc_page();
+    p->container = &root_container;
     memset(p->kstack, 0, PAGE_SIZE);
     p->kcontext = (KernelContext*)((u64)p->kstack + PAGE_SIZE - 16 - sizeof(KernelContext) - sizeof(UserContext));
     p->ucontext = (UserContext*)((u64)p->kstack + PAGE_SIZE - 16 - sizeof(UserContext));
