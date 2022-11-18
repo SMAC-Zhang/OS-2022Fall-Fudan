@@ -10,6 +10,8 @@
 #include <common/string.h>
 #include <common/defines.h>
 
+#define MIN_RUNTIME 2
+
 static const int prio_to_weight[40] = {
     /* -20 */ 88761, 71755, 56483, 46273, 36291,
     /* -15 */ 29154, 23254, 18705, 14949, 11916,
@@ -133,7 +135,7 @@ bool _activate_proc(struct proc* p, bool onalert)
         } else {
             // if p and thisproc belong to the same container
             if (thisproc()->container == p->container) {
-                p->schinfo.vruntime = thisproc()->schinfo.vruntime;
+                p->schinfo.vruntime = thisproc()->schinfo.vruntime + MIN_RUNTIME;
             } else {
                 p->schinfo.vruntime = 0;
             }
@@ -171,7 +173,7 @@ void activate_group(struct container* group)
     } else {
         // if group and thisproc belong to the same container
         if (thisproc()->container == group->parent) {
-            g_schinfo->vruntime = thisproc()->schinfo.vruntime;
+            g_schinfo->vruntime = thisproc()->schinfo.vruntime + MIN_RUNTIME;
         } else {
             g_schinfo->vruntime = 0;
         }
@@ -280,7 +282,7 @@ static void update_this_proc(struct proc* p) {
     }
     if (p->idle == false) {
         proc_cpu_timer[cpuid()].elapse = MAX(sched_latency * p->schinfo.weight / p->container->schqueue.weight_sum, (u64)1);
-        proc_cpu_timer[cpuid()].elapse = 2;
+        proc_cpu_timer[cpuid()].elapse = MIN_RUNTIME;
     } else {
         proc_cpu_timer[cpuid()].elapse = 1;
     }

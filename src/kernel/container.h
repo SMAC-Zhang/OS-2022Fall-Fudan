@@ -8,7 +8,7 @@
 #define MAX_PID 256
 
 typedef struct pid_bitmap_t {
-    BitmapCell bitmap[MAX_PID / 8];
+    BitmapCell bitmap[MAX_PID / 64];
     SpinLock pid_lock;
     int last_pid;
     int size;

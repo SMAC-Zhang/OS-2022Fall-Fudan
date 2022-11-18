@@ -44,7 +44,7 @@ static int alloc_pid(pid_bitmap_t* pid_bitmap) {
         }
     }
     if (ret == -1) {
-        for (int i = 1; i < pid_bitmap->last_pid; ++i) {
+        for (int i = 0; i < pid_bitmap->last_pid; ++i) {
             if (bitmap_get(pid_bitmap->bitmap, i) == false) {
                 ret = i;
                 bitmap_set(pid_bitmap->bitmap, i);
@@ -69,7 +69,7 @@ define_early_init(global_pid) {
     memset(global_pid.bitmap, 0, MAX_PID / 8);
     bitmap_set(global_pid.bitmap, 0);
     global_pid.last_pid = 0;
-    global_pid.size = MAX_PID / 8;
+    global_pid.size = MAX_PID;
 }
 
 define_early_init(ptree_lock) {
