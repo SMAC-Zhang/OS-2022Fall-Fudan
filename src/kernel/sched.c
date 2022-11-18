@@ -135,7 +135,7 @@ bool _activate_proc(struct proc* p, bool onalert)
         } else {
             // if p and thisproc belong to the same container
             if (thisproc()->container == p->container) {
-                p->schinfo.vruntime = thisproc()->schinfo.vruntime + MIN_RUNTIME;
+                p->schinfo.vruntime = thisproc()->schinfo.vruntime;
             } else {
                 p->schinfo.vruntime = 0;
             }
@@ -173,7 +173,7 @@ void activate_group(struct container* group)
     } else {
         // if group and thisproc belong to the same container
         if (thisproc()->container == group->parent) {
-            g_schinfo->vruntime = thisproc()->schinfo.vruntime + MIN_RUNTIME;
+            g_schinfo->vruntime = thisproc()->schinfo.vruntime;
         } else {
             g_schinfo->vruntime = 0;
         }
