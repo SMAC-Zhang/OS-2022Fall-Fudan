@@ -77,6 +77,7 @@ void init_schinfo(struct schinfo* p, bool group) {
 
 void init_schqueue(struct schqueue* sq) {
     sq->weight_sum = 0;
+    sq->unused = true;
 }
 
 void _acquire_sched_lock() {
@@ -146,12 +147,14 @@ bool _activate_proc(struct proc* p, bool onalert)
     ASSERT(_rb_insert(&(p->schinfo.node), rq, _ptree_cmp) == 0);
     p->schinfo.is_in_queue = true;
     p->container->schqueue.weight_sum += p->schinfo.weight;
-    while (group->schinfo.is_in_queue == false && group != &root_container) {
-        auto gparent = group->parent;
-        ASSERT(_rb_insert(&(group->schinfo.node), &(gparent->schqueue.rq), _ptree_cmp) == 0);
-        group->schinfo.is_in_queue = true;
-        gparent->schqueue.weight_sum += group->schinfo.weight;
-        group = gparent;
+    if (p->container->schqueue.unused == false) {
+        while (group->schinfo.is_in_queue == false && group != &root_container) {
+            auto gparent = group->parent;
+            ASSERT(_rb_insert(&(group->schinfo.node), &(gparent->schqueue.rq), _ptree_cmp) == 0);
+            group->schinfo.is_in_queue = true;
+            gparent->schqueue.weight_sum += group->schinfo.weight;
+            group = gparent;
+        }
     }
     _release_sched_lock();
     return true;
@@ -178,11 +181,14 @@ void activate_group(struct container* group)
             g_schinfo->vruntime = 0;
         }
     }
-
-    if (group->schinfo.is_in_queue == false) {
-        ASSERT(_rb_insert(&(g_schinfo->node), rq, _ptree_cmp) == 0);
+    group->schqueue.unused = false;
+    while (group != &root_container && group->schinfo.is_in_queue == false) {
+        auto gparent = group->parent;
+        rq = &(gparent->schqueue.rq);
+        ASSERT(_rb_insert(&(group->schinfo.node), rq, _ptree_cmp) == 0);
         group->schinfo.is_in_queue = true;
-        gparent_schqueue->weight_sum += g_schinfo->weight;
+        gparent->schqueue.weight_sum += group->schinfo.weight;
+        group = gparent;
     }
     _release_sched_lock();
 }

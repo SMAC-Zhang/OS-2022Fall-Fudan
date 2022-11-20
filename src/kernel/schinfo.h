@@ -28,4 +28,5 @@ struct schqueue {
     struct rb_root_ rq;
     u64 weight_sum;
     u64 sched_latency;
+    bool unused;
 };
