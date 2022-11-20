@@ -239,16 +239,10 @@ static struct proc* pick_next() {
     auto sch = container_of(p, struct schinfo, node);
     while (p != NULL && sch->group) {
         group = container_of(sch, struct container, schinfo);
+        auto gparent = group->parent;
+        group->schqueue.sched_latency = MAX(group->schinfo.weight * gparent->schqueue.sched_latency / gparent->schqueue.weight_sum, (u64)1);
         rq = &(group->schqueue.rq);
         p = _rb_first(rq);
-        while (group != &root_container && p == NULL) {
-            auto gparent = group->parent;
-            rq = &(gparent->schqueue.rq);
-            _rb_erase(_rb_first(rq), rq);
-            group->schinfo.is_in_queue = false;
-            p = _rb_first(rq);
-            group = gparent;
-        }
         sch = container_of(p, struct schinfo, node);
     }
 
@@ -257,6 +251,16 @@ static struct proc* pick_next() {
         sch->is_in_queue = false;
         auto ret = container_of(sch, struct proc, schinfo);
         ASSERT(ret->state == RUNNABLE);
+
+        // if container is empty
+        // remove it from sched_queue
+        while (group != &root_container && _rb_first(rq) == NULL) {
+            auto gparent = group->parent;
+            rq = &(gparent->schqueue.rq);
+            _rb_erase(&(group->schinfo.node), rq);
+            group->schinfo.is_in_queue = false;
+            group = gparent;
+        }
         return ret;
     }
 
