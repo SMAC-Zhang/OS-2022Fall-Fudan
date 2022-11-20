@@ -182,8 +182,8 @@ void activate_group(struct container* group)
     if (group->schinfo.is_in_queue == false) {
         ASSERT(_rb_insert(&(g_schinfo->node), rq, _ptree_cmp) == 0);
         group->schinfo.is_in_queue = true;
+        gparent_schqueue->weight_sum += g_schinfo->weight;
     }
-    gparent_schqueue->weight_sum += g_schinfo->weight;
     _release_sched_lock();
 }
 
