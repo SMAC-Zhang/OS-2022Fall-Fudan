@@ -6,19 +6,21 @@
 #include <kernel/schinfo.h>
 #include <kernel/pt.h>
 #include <kernel/container.h>
+#include <common/spinlock.h>
 
 enum procstate { UNUSED, RUNNABLE, RUNNING, SLEEPING, DEEPSLEEPING, ZOMBIE };
 
-typedef struct UserContext
-{
+typedef struct UserContext {
     // TODO: customize your trap frame
-
+    u64 spsr, elr;
+    u64 sp, lr;
+    u64 x[30];
 } UserContext;
 
-typedef struct KernelContext
-{
+typedef struct KernelContext {
     // TODO: customize your context
-
+    u64 lr, x0, x1; 
+    u64 x[11]; // x19 - x29
 } KernelContext;
 
 struct proc
@@ -31,6 +33,7 @@ struct proc
     enum procstate state;
     Semaphore childexit;
     ListNode children;
+    ListNode zombie_children;
     ListNode ptnode;
     struct proc* parent;
     struct schinfo schinfo;

@@ -30,7 +30,6 @@ NO_RETURN void kernel_entry() {
     // sd_test();
     
     do_rest_init();
-
     while (1)
         yield();
 }

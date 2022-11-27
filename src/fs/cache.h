@@ -35,6 +35,8 @@ typedef struct {
 typedef struct {
     usize rm;
     // hint: you may want to add something else here.
+    usize op_block[OP_MAX_NUM_BLOCKS];
+    usize block_num;
 } OpContext;
 
 typedef struct BlockCache {
