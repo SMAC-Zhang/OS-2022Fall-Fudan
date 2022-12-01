@@ -276,6 +276,44 @@ struct proc* create_proc()
     return p;
 }
 
+static struct proc* recursive_get_offline_proc(struct proc* cur_proc) {
+    ListNode* child_node = cur_proc->children.next;
+    struct proc* child;
+    while (child_node != &(cur_proc->children)) {
+        child = container_of(child_node, struct proc, ptnode);
+        
+        _acquire_spinlock(&(child->pgdir.lock));
+        if (child->pgdir.online == false) {
+            _release_spinlock(&(child->pgdir.lock));
+            return child;
+        }
+        _release_spinlock(&(child->pgdir.lock));
+
+        auto ret = recursive_get_offline_proc(child);
+        if (ret != NULL) {
+            _acquire_spinlock(&(ret->pgdir.lock));
+            if (ret->pgdir.online == false) {
+                _release_spinlock(&(ret->pgdir.lock));
+                return ret;
+            }
+            _release_spinlock(&(ret->pgdir.lock));
+        }
+        child_node = child_node->next;
+    }
+    return NULL;
+}
+
+struct proc* get_offline_proc() {
+    _acquire_spinlock(&ptree_lock);
+    struct proc* ret = recursive_get_offline_proc(&root_proc);
+    if (ret == NULL) {
+        return ret;
+    }
+    _acquire_spinlock(&(ret->pgdir.lock));
+    _release_spinlock(&ptree_lock);
+    return ret;
+}
+
 define_init(root_proc)
 {
     init_proc(&root_proc);

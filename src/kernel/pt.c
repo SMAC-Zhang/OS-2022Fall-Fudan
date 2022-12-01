@@ -2,6 +2,8 @@
 #include <kernel/mem.h>
 #include <common/string.h>
 #include <aarch64/intrinsic.h>
+#include <kernel/paging.h>
+#include <kernel/sched.h>
 
 PTEntriesPtr get_pte(struct pgdir* pgdir, u64 va, bool alloc)
 {
@@ -48,19 +50,17 @@ PTEntriesPtr get_pte(struct pgdir* pgdir, u64 va, bool alloc)
         }
     }
     PTEntriesPtr pt3 = (PTEntriesPtr)P2K(PTE_ADDRESS(pt2[VA_PART2(va)]));
-    if (!(pt3[VA_PART3(va)] & PTE_VALID)) {
-        if (alloc) {
-            return (PTEntriesPtr)(pt3 + VA_PART3(va));
-        } else {
-            return NULL;
-        }
-    }
     return (PTEntriesPtr)(pt3 + VA_PART3(va));
 }
 
 void init_pgdir(struct pgdir* pgdir)
 {
-    pgdir->pt = NULL;
+    pgdir->pt = kalloc_page();
+	memset(pgdir->pt, 0, PAGE_SIZE);
+    pgdir->online = false;
+    init_spinlock(&(pgdir->lock));
+    init_list_node(&(pgdir->section_head));
+    init_sections(&(pgdir->section_head));
 }
 
 void free_pgdir(struct pgdir* pgdir)
@@ -71,6 +71,7 @@ void free_pgdir(struct pgdir* pgdir)
     if (pgdir->pt == NULL) {
         return;
     }
+    free_sections(pgdir);
     auto pt0 = pgdir->pt;
     for (int i = 0; i < N_PTE_PER_TABLE; ++i) {
         if (pt0[i] & PTE_VALID) {
@@ -96,11 +97,27 @@ void free_pgdir(struct pgdir* pgdir)
 void attach_pgdir(struct pgdir* pgdir)
 {
     extern PTEntries invalid_pt;
-    if (pgdir->pt)
+    auto this = thisproc();
+
+    _acquire_spinlock(&(this->pgdir.lock));
+    this->pgdir.online = false;
+    _release_spinlock(&(this->pgdir.lock));
+    
+    if (pgdir->pt) {
+        _acquire_spinlock(&(pgdir->lock));
+        pgdir->online = true;
+        _release_spinlock(&(pgdir->lock));
+
+        arch_tlbi_vmalle1is();
         arch_set_ttbr0(K2P(pgdir->pt));
-    else
+    } else {
         arch_set_ttbr0(K2P(&invalid_pt));
+    }
 }
 
-
+void vmmap(struct pgdir* pd, u64 va, void* ka, u64 flags) {
+    PTEntriesPtr pt3 = get_pte(pd, va, true);
+    *pt3 = (PTEntry)(K2P(ka) | flags);
+    inc_page_cnt(ka);
+}
 

@@ -1,4 +1,3 @@
-
 #include <driver/sddef.h>
 #include <kernel/proc.h>
 #include <kernel/sched.h>
@@ -147,9 +146,9 @@ void sd_intr() {
      */
     queue_lock(&buflist);
     buf* b = container_of(queue_front(&buflist), buf, node);
-    int flag = b->flags;
+    int write = b->flags & B_DIRTY;
     u32* intbuf = (u32*)b->data;
-    if (flag == 0) {
+    if (!write) {
         arch_dsb_sy();
         if (sdWaitForInterrupt(INT_READ_RDY)) {
             PANIC();
@@ -162,7 +161,7 @@ void sd_intr() {
         }
         arch_dsb_sy();
         b->flags = B_VALID;
-    } else if (flag == B_DIRTY) {
+    } else if (write) {
         if (sdWaitForInterrupt(INT_DATA_DONE)) {
             PANIC();
         }

@@ -14,6 +14,10 @@ static LogHeader header;  // in-memory copy of log header block.
 
 static u32 cached_blocks_num;
 
+// manage swap_bitmap
+static SpinLock swap_lock;
+static char swap_bitmap[SWAP_BIT_END - SWAP_BIT_START];
+
 // hint: you may need some other variables. Just add them here.
 struct LOG {
     /* data */
@@ -156,6 +160,7 @@ void init_bcache(const SuperBlock* _sblock, const BlockDevice* _device) {
 
     // TODO
     init_spinlock(&lock);
+    init_spinlock(&swap_lock);
     init_list_node(&head);
     cached_blocks_num = 0;
 
@@ -293,9 +298,9 @@ static void cache_end_op(OpContext* ctx) {
 // hint: you can use `cache_acquire`/`cache_sync` to read/write blocks.
 static usize cache_alloc(OpContext* ctx) {
     // TODO
-    for (u32 i = 0; i < sblock->num_blocks; i += BIT_PER_BLOCK) {
+    for (u32 i = 0; i < SWAP_START; i += BIT_PER_BLOCK) {
         Block* bitmap_block = cache_acquire(i / BIT_PER_BLOCK + sblock->bitmap_start);
-        for (u32 j = 0; j < BIT_PER_BLOCK && i + j < sblock->num_blocks; ++j) {
+        for (u32 j = 0; j < BIT_PER_BLOCK && i + j < SWAP_START; ++j) {
             if (bitmap_get((BitmapCell*)bitmap_block->data, j) == false) {
                 Block* b = cache_acquire(i + j);
                 memset(b->data, 0, BLOCK_SIZE);
@@ -321,6 +326,24 @@ static void cache_free(OpContext* ctx, usize block_no) {
     bitmap_clear((BitmapCell*)bitmap_block->data, block_no % BIT_PER_BLOCK);
     cache_sync(ctx, bitmap_block);
     cache_release(bitmap_block);
+}
+
+void release_8_blocks(u32 bno) {
+    _acquire_spinlock(&swap_lock);
+    swap_bitmap[(bno - SWAP_START) / 8] = (char)0;
+    _release_spinlock(&swap_lock);
+}
+
+u32 find_and_set_8_blocks() {
+    _acquire_spinlock(&swap_lock);
+    for (int i = 0; i < SWAP_BIT_END - SWAP_BIT_START; ++i) {
+        if (swap_bitmap[i] == (char)0) {
+            swap_bitmap[i] = (char)0xff;
+            _release_spinlock(&swap_lock);
+            return i * 8 + SWAP_START;
+        }
+    }
+    PANIC();
 }
 
 BlockCache bcache = {

@@ -5,6 +5,11 @@
 #include <fs/defines.h>
 #include <common/sem.h>
 
+#define SWAP_START 800
+#define SWAP_END 1000
+#define SWAP_BIT_START 100
+#define SWAP_BIT_END 125
+
 // maximum number of distinct blocks that one atomic operation can hold.
 #define OP_MAX_NUM_BLOCKS 10
 
