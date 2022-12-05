@@ -100,7 +100,9 @@ void attach_pgdir(struct pgdir* pgdir)
     auto this = thisproc();
 
     _acquire_spinlock(&(this->pgdir.lock));
-    this->pgdir.online = false;
+    if (this->pgdir.pt != NULL) {
+        this->pgdir.online = false;
+    }
     _release_spinlock(&(this->pgdir.lock));
     
     if (pgdir->pt) {
