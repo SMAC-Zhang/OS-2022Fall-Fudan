@@ -99,7 +99,7 @@ void swapout(struct pgdir* pd, struct section* st) {
 			auto pte_ptr = get_pte(pd, i, false);
 			if (pte_ptr != NULL && *pte_ptr != 0 && !(*pte_ptr & PTE_VALID)) {
 				u64 ka = P2K(PTE_ADDRESS(*pte_ptr));
-				*pte_ptr = (write_page_to_disk((void*)ka) << 12) | PTE_FLAGS(*pte_ptr);
+				*pte_ptr = (write_page_to_disk((void*)ka) << 12);
 				kfree_page((void*)ka);
 			}
 		}
@@ -122,7 +122,7 @@ void swapin(struct pgdir* pd, struct section* st) {
 				u64 ka = (u64)kalloc_page();
 				u32 bno = (u32)(PTE_ADDRESS(*pte_ptr) >> 12);
 				read_page_from_disk((void*)ka, bno);
-				vmmap(pd, i, (void*)ka, PTE_FLAGS(*pte_ptr) | PTE_VALID);
+				vmmap(pd, i, (void*)ka, PTE_USER_DATA);
 			}
 		}
 	}
