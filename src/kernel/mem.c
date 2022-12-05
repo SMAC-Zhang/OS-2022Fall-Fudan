@@ -38,7 +38,6 @@ void* kalloc_page() {
     // TODO
     void* ret = fetch_from_queue(&pages);
     u64 idx = K2P(ret) / (u64)PAGE_SIZE;
-    init_spinlock(&(page_cnt[idx].lock));
     init_rc(&(page_cnt[idx].ref));
     _increment_rc(&(page_cnt[idx].ref));
 
@@ -48,13 +47,11 @@ void* kalloc_page() {
 void kfree_page(void* p) {
     // TODO
     u64 idx = K2P(p) / (u64)PAGE_SIZE;
-    _decrement_rc(&(page_cnt[idx].ref));
-    _acquire_spinlock(&(page_cnt[idx].lock));
-    if (page_cnt[idx].ref.count == 0) {
+    bool need_free = _decrement_rc(&(page_cnt[idx].ref));
+    if (need_free) {
         add_to_queue(&pages, (QueueNode*)p);
         _decrement_rc(&alloc_page_cnt);
     }
-    _release_spinlock(&(page_cnt[idx].lock));
 }
 
 // TODO: kalloc kfree

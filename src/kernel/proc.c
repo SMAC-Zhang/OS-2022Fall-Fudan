@@ -307,6 +307,7 @@ struct proc* get_offline_proc() {
     _acquire_spinlock(&ptree_lock);
     struct proc* ret = recursive_get_offline_proc(&root_proc);
     if (ret == NULL) {
+        _release_spinlock(&ptree_lock);
         return ret;
     }
     _acquire_spinlock(&(ret->pgdir.lock));

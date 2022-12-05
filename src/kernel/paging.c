@@ -61,7 +61,7 @@ void* alloc_page_for_user() {
 		//TODO
 		auto swp_proc = get_offline_proc();
 		if (swp_proc == NULL) {
-			return NULL;
+			break;
 		}
 		auto section_node = swp_proc->pgdir.section_head.next;
 		auto section = container_of(section_node, struct section, stnode);
@@ -92,7 +92,7 @@ void swapout(struct pgdir* pd, struct section* st) {
 	pd->online = true;
 	_release_spinlock(&(pd->lock));
 	if (st->flags & ST_FILE) {
-		// next lab
+		// donothing
 	} else {
 		for (u64 i = begin; i < end; i += PAGE_SIZE) {
 			// to disk
@@ -112,8 +112,8 @@ void swapin(struct pgdir* pd, struct section* st) {
 	//TODO
 	unalertable_wait_sem(&(st->sleeplock));
 	u64 begin = st->begin, end = st->end;
-	if (st->flags == ST_FILE) {
-		// next lab
+	if (st->flags & ST_FILE) {
+		// do nothing
 	} else {
 		for (u64 i = begin; i < end; i += PAGE_SIZE) {
 			// from disk
@@ -122,25 +122,15 @@ void swapin(struct pgdir* pd, struct section* st) {
 				u64 ka = (u64)kalloc_page();
 				u32 bno = (u32)(PTE_ADDRESS(*pte_ptr) >> 12);
 				read_page_from_disk((void*)ka, bno);
-				vmmap(pd, i, (void*)ka, PTE_FLAGS(*pte_ptr));
+				vmmap(pd, i, (void*)ka, PTE_FLAGS(*pte_ptr) | PTE_VALID);
 			}
 		}
 	}
 	post_sem(&(st->sleeplock));
-	for (u64 i = begin; i < end; i += PAGE_SIZE) {
-		// set pte_entry valid
-		auto pte_ptr = get_pte(pd, i, false);
-		if (pte_ptr != NULL && *pte_ptr != 0 && !(*pte_ptr & PTE_VALID)) {
-			*pte_ptr |= (PTE_VALID);
-		}
-	}
 	st->flags &= ~ST_SWAP;
 }
 
 int pgfault(u64 iss) {
-	if (iss == 0) {
-		//
-	}
 	struct proc* p = thisproc();
 	struct pgdir* pd = &p->pgdir;
 	u64 addr = arch_get_far();
@@ -175,7 +165,7 @@ int pgfault(u64 iss) {
 		PANIC();
 	}
 	arch_tlbi_vmalle1is();
-	return 0;
+	return (int)iss;
 }
 
 void init_sections(ListNode* section_head) {

@@ -8,7 +8,6 @@
 #define REVERSED_PAGES 1024 //Reversed pages
 
 struct page {
-	SpinLock lock;
 	RefCount ref;
 };
 
