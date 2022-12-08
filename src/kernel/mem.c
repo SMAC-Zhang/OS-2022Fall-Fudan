@@ -46,6 +46,9 @@ void* kalloc_page() {
 
 void kfree_page(void* p) {
     // TODO
+    if (p == zero_page) { 
+        return;
+    }
     u64 idx = K2P(p) / (u64)PAGE_SIZE;
     bool need_free = _decrement_rc(&(page_cnt[idx].ref));
     if (need_free) {
