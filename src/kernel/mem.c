@@ -39,7 +39,6 @@ void* kalloc_page() {
     void* ret = fetch_from_queue(&pages);
     u64 idx = K2P(ret) / (u64)PAGE_SIZE;
     init_rc(&(page_cnt[idx].ref));
-    _increment_rc(&(page_cnt[idx].ref));
 
     return ret;
 }
