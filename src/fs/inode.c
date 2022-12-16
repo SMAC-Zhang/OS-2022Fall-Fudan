@@ -174,13 +174,13 @@ static void inode_put(OpContext* ctx, Inode* inode) {
     _acquire_spinlock(&lock);
     if (inode->rc.count == 1 && inode->entry.num_links == 0 && inode->valid) {
         inode_lock(inode); // we can make sure to get the lock
+        inode->valid = FALSE;
         _release_spinlock(&lock);
 
         // clear disk
         inode_clear(ctx, inode);
         inode->entry.type = INODE_INVALID;
         inode_sync(ctx, inode, true);
-        inode->valid = FALSE;
 
         // free
         _acquire_spinlock(&lock);
