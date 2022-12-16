@@ -111,7 +111,7 @@ static Inode* inode_get(usize inode_no) {
     Inode* inode;
     while (p != &head) {
         inode = container_of(p, Inode, node);
-        if (inode->inode_no == inode_no && inode->rc.count > 0) {
+        if (inode->inode_no == inode_no && inode->rc.count > 0 && inode->valid) {
             _increment_rc(&(inode->rc));
             _release_spinlock(&lock);
             return inode;
