@@ -1,5 +1,6 @@
-
 #include <driver/sddef.h>
+#include <kernel/proc.h>
+#include <kernel/sched.h>
 
 /*
  * Initialize SD card.
@@ -32,6 +33,8 @@ ALWAYS_INLINE u32 get_and_clear_EMMC_INTERRUPT() {
     return t;
 }
 
+static Queue buflist;
+SpinLock sd_lock;
 /*
  * Initialize SD card and parse MBR.
  * 1. The first partition should be FAT and is used for booting.
@@ -39,7 +42,6 @@ ALWAYS_INLINE u32 get_and_clear_EMMC_INTERRUPT() {
  *
  * See https://en.wikipedia.org/wiki/Master_boot_record
  */
-
 void sd_init() {
     /*
      * 1.call sdInit.
@@ -56,6 +58,15 @@ void sd_init() {
      * 4.don't forget to call this function somewhere
      * TODO: Lab5 driver.
      */
+    sdInit();
+    init_spinlock(&sd_lock);
+    queue_init(&buflist);
+    set_interrupt_handler(IRQ_SDIO, sd_intr);
+    set_interrupt_handler(IRQ_ARASANSDIO, sd_intr);
+
+    buf b = {0};
+    sdrw(&b);
+    printk("LBA: %d, size: %d\n", *(int*)(b.data + 0x1ce + 0x8), *(int*)(b.data + 0x1ce + 0xc));
 }
 
 /* Start the request for b. Caller must hold sdlock. */
@@ -66,10 +77,8 @@ static void sd_start(struct buf* b) {
     int bno =
         sdCard.type == SD_TYPE_2_HC ? (int)b->blockno : (int)b->blockno << 9;
     int write = b->flags & B_DIRTY;
-
     // printk("- sd start: cpu %d, flag 0x%x, bno %d, write=%d\n", cpuid(),
     // b->flags, bno, write);
-
     arch_dsb_sy();
     // Ensure that any data operation has completed before doing the transfer.
     if (*EMMC_INTERRUPT) {
@@ -96,7 +105,6 @@ static void sd_start(struct buf* b) {
         printk("Only support word-aligned buffers. \n");
         PANIC();
     }
-
     if (write) {
         // Wait for ready interrupt for the next block.
         if ((resp = sdWaitForInterrupt(INT_WRITE_RDY))) {
@@ -136,6 +144,41 @@ void sd_intr() {
      *
      * TODO: Lab5 driver.
      */
+    queue_lock(&buflist);
+    buf* b = container_of(queue_front(&buflist), buf, node);
+    int write = b->flags & B_DIRTY;
+    u32* intbuf = (u32*)b->data;
+    if (!write) {
+        arch_dsb_sy();
+        if (sdWaitForInterrupt(INT_READ_RDY)) {
+            PANIC();
+        }
+        for (int i = 0; i < 128; ++i) {
+            intbuf[i] = get_EMMC_DATA();
+        }
+        if (sdWaitForInterrupt(INT_DATA_DONE)) {
+            PANIC();
+        }
+        arch_dsb_sy();
+        b->flags = B_VALID;
+    } else if (write) {
+        if (sdWaitForInterrupt(INT_DATA_DONE)) {
+            PANIC();
+        }
+        b->flags = B_VALID;
+    } else {
+        PANIC();
+    }
+    queue_pop(&buflist);
+    post_sem(&b->sem);
+    
+    if (queue_empty(&buflist) == false) {
+        b = container_of(queue_front(&buflist), buf, node); 
+        _acquire_spinlock(&sd_lock);
+        sd_start(b);
+        _release_spinlock(&sd_lock);
+    }
+    queue_unlock(&buflist);
 }
 
 void sdrw(buf* b) {
@@ -148,6 +191,18 @@ void sdrw(buf* b) {
      * sd_start(), wait_sem() to complete this function.
      *  TODO: Lab5 driver.
      */
+    init_sem(&(b->sem), 0);
+    queue_lock(&buflist);
+    queue_push(&buflist, &(b->node));
+    if (buflist.sz == 1) {
+        _acquire_spinlock(&sd_lock);
+        sd_start(b);
+        _release_spinlock(&sd_lock);
+    }
+    queue_unlock(&buflist);
+    while (b->flags != B_VALID) {
+        unalertable_wait_sem(&(b->sem));
+    }
 }
 
 /* SD card test and benchmark. */

@@ -24,13 +24,26 @@ void init_container(struct container* container)
     init_schinfo(&container->schinfo, true);
     init_schqueue(&container->schqueue);
     // TODO: initialize namespace (local pid allocator)
-
+    memset(container->local_pid.bitmap, 0, MAX_PID / 8);
+    container->local_pid.last_pid = -1;
+    container->local_pid.size = MAX_PID;
+    init_spinlock(&(container->local_pid.pid_lock));
 }
 
 struct container* create_container(void (*root_entry)(), u64 arg)
 {
     // TODO
+    struct container* new_container = (struct container*)kalloc(sizeof(struct container));
+    init_container(new_container);
+    new_container->parent = thisproc()->container;
+    new_container->rootproc = create_proc();
+    new_container->rootproc->container = new_container;
     
+    set_parent_to_this(new_container->rootproc);
+    start_proc(new_container->rootproc, root_entry, arg);
+    activate_group(new_container);
+    
+    return new_container;
 }
 
 define_early_init(root_container)
