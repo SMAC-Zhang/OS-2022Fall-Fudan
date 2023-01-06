@@ -111,9 +111,11 @@ static Inode* inode_get(usize inode_no) {
     Inode* inode;
     while (p != &head) {
         inode = container_of(p, Inode, node);
-        if (inode->inode_no == inode_no && inode->rc.count > 0 && inode->valid) {
+        if (inode->inode_no == inode_no && inode->rc.count > 0) {
             _increment_rc(&(inode->rc));
             _release_spinlock(&lock);
+            inode_lock(inode);
+            inode_unlock(inode);
             return inode;
         }
         p = p->next;
@@ -174,7 +176,7 @@ static void inode_put(OpContext* ctx, Inode* inode) {
     _acquire_spinlock(&lock);
     if (inode->rc.count == 1 && inode->entry.num_links == 0 && inode->valid) {
         inode_lock(inode); // we can make sure to get the lock
-        inode->valid = FALSE;
+        _detach_from_list(&(inode->node));
         _release_spinlock(&lock);
 
         // clear disk
@@ -183,10 +185,7 @@ static void inode_put(OpContext* ctx, Inode* inode) {
         inode_sync(ctx, inode, true);
 
         // free
-        _acquire_spinlock(&lock);
         inode_unlock(inode);
-        _detach_from_list(&(inode->node));
-        _release_spinlock(&lock);
         kfree(inode);
         return;
     }
