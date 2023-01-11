@@ -5,6 +5,7 @@
 #include <common/list.h>
 #include <common/string.h>
 #include <kernel/printk.h>
+#include <kernel/paging.h>
 
 struct proc root_proc;
 extern struct container root_container;
@@ -262,6 +263,7 @@ void init_proc(struct proc* p) {
     init_list_node(&p->zombie_children);
     init_pgdir(&p->pgdir);
     init_schinfo(&p->schinfo, false);
+    init_oftable(&(p->oftable));
     p->kstack = kalloc_page();
     p->container = &root_container;
     memset(p->kstack, 0, PAGE_SIZE);
@@ -329,4 +331,35 @@ define_init(root_proc)
 void trap_return();
 int fork() {
     /* TODO: Your code here. */
+    auto this = thisproc();
+    auto child = create_proc();
+    set_parent_to_this(child);
+    set_container_to_this(child);
+    init_pgdir(&(child->pgdir));
+    
+    // copy trapframe
+    *(child->ucontext) = *(this->ucontext);
+    child->cwd = inodes.share(this->cwd);
+    // child process's fork() returns 0
+    child->ucontext->x[0] = 0;
+
+    // copy file
+    for (int i = 0; i < NOFILE; ++i) {
+        if (this->oftable.otable[i] != NULL) {
+            child->oftable.otable[i] = filedup(this->oftable.otable[i]);
+        }
+    }
+
+    // copy pgdir
+    copy_sections(&(this->pgdir.section_head), &(child->pgdir.section_head));
+    for (u64 i = 0; ; i += PAGE_SIZE) {
+        auto pte_ptr = get_pte(&(this->pgdir), i, false);
+        if (pte_ptr == NULL || !(*pte_ptr & PTE_VALID)) { // what if swapout?
+            break;
+        }
+        vmmap(&(child->pgdir), i, (void*)PTE_ADDRESS((u64)*pte_ptr), PTE_FLAGS(*pte_ptr) | PTE_RO);
+    }
+
+    start_proc(child, trap_return, 0);
+    return child->pid;
 }

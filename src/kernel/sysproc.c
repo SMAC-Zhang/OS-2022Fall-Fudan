@@ -45,6 +45,7 @@ define_syscall(clone, int flag, void* childstk) {
         printk("sys_clone: flags other than SIGCHLD are not supported.\n");
         return -1;
     }
+    childstk = childstk;
     return fork();
 }
 
@@ -57,7 +58,7 @@ define_syscall(exit, int n) {
 }
 
 int execve(const char* path, char* const argv[], char* const envp[]);
-define_syscall(execve, const char* p, void* argv, void* envp) {
+define_syscall(execve, const char* p, void* argv, void* envp) {\
     if (!user_strlen(p, 256))
         return -1;
     return execve(p, argv, envp);

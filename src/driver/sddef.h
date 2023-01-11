@@ -1150,7 +1150,6 @@ int sdInit() {
     int resp;
     if ((resp = sdGetBaseClock()))
         return resp;
-
     // Reset the card.
     printk("- sdInit: reset the card\n");
     if ((resp = sdResetCard(C1_SRST_HC)))
@@ -1161,6 +1160,7 @@ int sdInit() {
     // If voltage range and check pattern don't match, look for older card.
     resp = sdSendCommandA(IX_SEND_IF_COND, 0x000001AA);
     printk("- sdSendCommandA response: %d\n", resp);
+    
     if (resp == SD_OK) {
         // Card responded with voltage and check pattern.
         // Resolve voltage and check for high capacity card.
@@ -1203,7 +1203,7 @@ int sdInit() {
     // Send ALL_SEND_CID (CMD2)
     if ((resp = sdSendCommand(IX_ALL_SEND_CID)))
         return sdDebugResponse(resp);
-
+    
     // Send SEND_REL_ADDR (CMD3)
     // TODO: In theory, loop back to SEND_IF_COND to find additional cards.
     if ((resp = sdSendCommand(IX_SEND_REL_ADDR)))
@@ -1226,7 +1226,6 @@ int sdInit() {
                sdCard.fileFormat);
         return SD_ERROR;
     }
-
     // At this point, set the clock to full speed.
     if ((resp = sdSetClock(FREQ_NORMAL)))
         return sdDebugResponse(resp);
@@ -1251,7 +1250,6 @@ int sdInit() {
             return sdDebugResponse(resp);
         *EMMC_CONTROL0 |= C0_HCTL_DWITDH;
     }
-
     // Send SET_BLOCKLEN (CMD16)
     // TODO: only needs to be sent for SDSC cards.  For SDHC and SDXC cards
     // block length is fixed at 512 anyway.
@@ -1260,7 +1258,6 @@ int sdInit() {
 
     // Print out the CID having got this far.
     sdParseCID();
-
     // Initialisation complete.
     sdCard.init = 1;
 

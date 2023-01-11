@@ -60,7 +60,6 @@ void init_pgdir(struct pgdir* pgdir)
     pgdir->online = false;
     init_spinlock(&(pgdir->lock));
     init_list_node(&(pgdir->section_head));
-    init_sections(&(pgdir->section_head));
 }
 
 void free_pgdir(struct pgdir* pgdir)
@@ -124,7 +123,21 @@ void attach_pgdir(struct pgdir* pgdir)
  */
 int copyout(struct pgdir* pd, void* va, void *p, usize len){
     // TODO
+    while (len > 0) {
+        u64 n = len;
+        u64 max_n = PAGE_SIZE - ((u64)va - PAGE_BASE((u64)va));
+        if (n > max_n) {
+            n = max_n;
+        }
+        u64 pa = *get_pte(pd, (u64)va, TRUE);
+        memmove((void*)P2K(pa), p, n);
+        len -= n;
+        p += n;
+        va += n;
+    }
+    return 0;
 }
+
 void vmmap(struct pgdir* pd, u64 va, void* ka, u64 flags) {
     PTEntriesPtr pt3 = get_pte(pd, va, true);
     *pt3 = (PTEntry)(K2P(ka) | flags);

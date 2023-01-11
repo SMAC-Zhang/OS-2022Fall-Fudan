@@ -13,10 +13,21 @@
 #include <kernel/printk.h>
 #include <kernel/init.h>
 
-define_rest_init(paging) {
-	//TODO init
-	init_block_device();
-	init_bcache(get_super_block(), &block_device);
+// define_rest_init(paging) {
+// 	//TODO init
+// 	init_block_device();
+// 	init_bcache(get_super_block(), &block_device);
+// }
+
+static struct section* create_heap(ListNode* section_head, u64 begin) {
+	struct section* heap = kalloc(sizeof(struct section));
+	heap->flags = ST_HEAP;
+	init_sleeplock(&(heap->sleeplock));
+	heap->begin = PAGE_BASE(begin) + PAGE_SIZE;
+	heap->end = heap->begin;
+	init_list_node(&(heap->stnode));
+	_insert_into_list(section_head, &(heap->stnode));
+	return heap;
 }
 
 u64 sbrk(i64 size) {
@@ -24,11 +35,21 @@ u64 sbrk(i64 size) {
 	auto this = thisproc();
 	auto section_node = this->pgdir.section_head.next;
 	auto section = container_of(section_node, struct section, stnode);
+	u64 begin = 0;
 	while (!(section->flags & ST_HEAP)) {
-		// we ensure that there is heap section
 		section_node = section_node->next;
 		section = container_of(section_node, struct section, stnode);
+		begin = MAX(begin, section->end);
+		if (section_node == &(this->pgdir.section_head)) {
+			break;
+		}
 	}
+	if (section_node == &(this->pgdir.section_head)) {
+		// if there is no heap, create it
+		section = container_of(section_node->next, struct section, stnode);
+		section = create_heap(&(this->pgdir.section_head), PAGE_BASE((begin + STACK_SIZE)) + 2 * PAGE_SIZE);
+	}
+
 	auto end = section->end;
 	if (size >= 0) {
 		section->end += size * PAGE_SIZE;
@@ -92,7 +113,7 @@ void swapout(struct pgdir* pd, struct section* st) {
 	pd->online = true;
 	_release_spinlock(&(pd->lock));
 	if (st->flags & ST_FILE) {
-		// donothing
+		// do nothing
 	} else {
 		for (u64 i = begin; i < end; i += PAGE_SIZE) {
 			// to disk
@@ -147,11 +168,24 @@ int pgfault(u64 iss) {
 	PTEntry pa = *get_pte(pd, addr, true);
 	if (pa == 0) {
 		// lazy allocation
+		// if (section->flags & ST_FILE) {
+		// 	// if it is file
+		// 	// read from disk
+		// 	void* new_page = alloc_page_for_user();
+		// 	u64 offset = section->offset + PAGE_BASE(addr - section->begin); // offset should aligns to PAGE_SIZE
+		// 	inodes.lock(section->fp->ip);
+		// 	inodes.read(section->fp->ip, new_page, offset, MIN((u64)PAGE_SIZE, section->offset + section->length - offset));
+		// 	inodes.unlock(section->fp->ip);
+		// 	vmmap(pd, addr, new_page, (section->flags & ST_RO) ? PTE_USER_DATA | PTE_RO : PTE_USER_DATA);
+		// } else 
 		if (section->flags & ST_SWAP) { // if swapout
 			swapin(pd, section);
+			void* new_page = alloc_page_for_user();
+			vmmap(pd, addr, new_page, PTE_USER_DATA);
+		} else {
+			void* new_page = alloc_page_for_user();
+			vmmap(pd, addr, new_page, PTE_USER_DATA);
 		}
-		void* new_page = alloc_page_for_user();
-		vmmap(pd, addr, new_page, PTE_USER_DATA);
 	} else if (pa & PTE_RO) {
 		// copy on write
 		void* old_page = (void*)P2K(PTE_ADDRESS(pa));
@@ -195,5 +229,27 @@ void free_sections(struct pgdir* pd) {
 		section_node = section_node->next;
 		_detach_from_list(&(section->stnode));
 		kfree((void*)section);
+	}
+}
+
+void copy_sections(ListNode* from_head, ListNode* to_head) {
+	ListNode* a = from_head->next, *b = to_head;
+	while (a != from_head) {
+		// init
+		auto st = container_of(a, struct section, stnode);
+		struct section* new_st = kalloc(sizeof(struct section));
+		new_st->flags = st->flags;
+		init_sleeplock(&(st->sleeplock));
+		new_st->begin = st->begin;
+		new_st->end = st->end;
+		if (st->fp) {
+			new_st->fp = filedup(st->fp);
+		}
+		new_st->offset = st->offset;
+		new_st->length = st->length;
+		// add to list
+		_insert_into_list(b, &(new_st->stnode));
+		a = a->next;
+		b = b->next;
 	}
 }

@@ -58,7 +58,7 @@ define_init(sched) {
         cpus[i].sched.thisproc = cpus[i].sched.idle = p;
         p->schinfo.prio = 19;
         p->schinfo.weight = prio_to_weight[19 + 20];
-    }                              
+    }                           
 }
 
 struct proc* thisproc() {

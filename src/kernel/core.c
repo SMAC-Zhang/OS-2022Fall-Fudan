@@ -22,17 +22,21 @@ NO_RETURN void idle_entry() {
     arch_stop_cpu();
 }
 
-NO_RETURN void kernel_entry() {
+extern void icode();
+void kernel_entry() {
     printk("hello world %d\n", (int)sizeof(struct proc));
 
     // proc_test();
     // user_proc_test();
     // container_test();
     // sd_test();
-    
     do_rest_init();
 
     // TODO: map init.S to user space and trap_return to run icode
+    set_return_addr((u64)icode);
+    // auto this = thisproc();
+    // this->ucontext->elr = (u64)icode;
+    // trap_return();
 }
 
 NO_INLINE NO_RETURN void _panic(const char* file, int line) {

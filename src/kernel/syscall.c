@@ -32,11 +32,38 @@ void syscall_entry(UserContext* context)
 // check if the virtual address [start,start+size) is READABLE by the current user process
 bool user_readable(const void* start, usize size) {
     // TODO
+    auto this = thisproc();
+    bool ok = FALSE;
+    auto st_node = this->pgdir.section_head.next;
+    while (st_node != &(this->pgdir.section_head)) {
+        auto st = container_of(st_node, struct section, stnode);
+        if ((u64)st->begin <= (u64)start && (u64)start + size <= st->end) {
+            ok = TRUE;
+            break;
+        }
+        st_node = st_node->next;
+    }
+    return ok;
 }
 
 // check if the virtual address [start,start+size) is READABLE & WRITEABLE by the current user process
 bool user_writeable(const void* start, usize size) {
     // TODO
+    auto this = thisproc();
+    bool ok = FALSE;
+    auto st_node = this->pgdir.section_head.next;
+    while (st_node != &(this->pgdir.section_head)) {
+        auto st = container_of(st_node, struct section, stnode);
+        if (st->flags & ST_RO) {
+            continue;
+        }
+        if ((u64)st->begin <= (u64)start && (u64)start + size <= st->end) {
+            ok = TRUE;
+            break;
+        }
+        st_node = st_node->next;
+    }
+    return ok;
 }
 
 // get the length of a string including tailing '\0' in the memory space of current user process

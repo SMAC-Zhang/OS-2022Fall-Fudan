@@ -33,6 +33,10 @@ struct iovec {
 // return null if the fd is invalid
 static struct file* fd2file(int fd) {
     // TODO
+    if (fd < 0 || fd >= NOFILE) {
+        return NULL;
+    }
+    return thisproc()->oftable.otable[fd];
 }
 
 /*
@@ -41,6 +45,13 @@ static struct file* fd2file(int fd) {
  */
 int fdalloc(struct file* f) {
     /* TODO: Lab10 Shell */
+    auto this = thisproc();
+    for (int i = 0; i < NOFILE; ++i) {
+        if (this->oftable.otable[i] == NULL) {
+            this->oftable.otable[i] = f;
+            return i;
+        }
+    }
     return -1;
 }
 
@@ -55,10 +66,20 @@ define_syscall(ioctl, int fd, u64 request) {
  */
 define_syscall(mmap, void* addr, int length, int prot, int flags, int fd, int offset) {
     // TODO
+    addr = addr;
+    length = length;
+    prot = prot;
+    flags = flags;
+    fd = fd;
+    offset = offset;
+    return 0;
 }
 
-define_syscall(munmap, void *addr, size_t length) {
+define_syscall(munmap, void *addr, u64 length) {
     // TODO
+    addr = addr;
+    length = length;
+    return 0;
 }
 
 /*
@@ -68,11 +89,11 @@ define_syscall(dup, int fd) {
     struct file* f = fd2file(fd);
     if (!f)
         return -1;
-    int fd = fdalloc(f);
-    if (fd < 0)
+    int new_fd = fdalloc(f);
+    if (new_fd < 0)
         return -1;
     filedup(f);
-    return fd;
+    return new_fd;
 }
 
 /*
@@ -115,6 +136,12 @@ define_syscall(writev, int fd, struct iovec *iov, int iovcnt) {
  */
 define_syscall(close, int fd) {
     /* TODO: Lab10 Shell */
+    auto f = fd2file(fd);
+    if (f == NULL) {
+        return -1;
+    }
+    thisproc()->oftable.otable[fd] = NULL;
+    fileclose(f);
     return 0;
 }
 
@@ -168,7 +195,55 @@ define_syscall(newfstatat, int dirfd, const char* path, struct stat* st, int fla
  */
 Inode* create(const char* path, short type, short major, short minor, OpContext* ctx) {
     /* TODO: Lab10 Shell */
-    return 0;
+    char name[FILE_NAME_MAX_LENGTH] = {0};
+    
+    // get the parent inode
+    auto ip_parent = nameiparent(path, name, ctx);
+    if (ip_parent == NULL) {
+        return NULL;
+    }
+
+    // lookup name
+    inodes.lock(ip_parent);
+    u32 ip_no = inodes.lookup(ip_parent, name, NULL);
+    if (ip_no != 0) {
+        // if find, return 
+        auto ip = inodes.get(ip_no);
+        inodes.unlock(ip_parent);
+        inodes.put(ctx, ip_parent);
+        inodes.lock(ip);
+        if (ip->entry.type == INODE_REGULAR && type == INODE_REGULAR) {     
+            return ip;
+        }
+        inodes.unlock(ip);
+        inodes.put(ctx, ip);
+        return NULL;
+    }
+    // else create
+    ip_no = inodes.alloc(ctx, type);
+    auto ip = inodes.get(ip_no);
+    
+    // insert "." and ".."
+    if (type == INODE_DIRECTORY) {
+        ip_parent->entry.num_links++;
+        inodes.sync(ctx, ip_parent, TRUE);
+        // insert ".." and '.'
+        inodes.insert(ctx, ip, "..", ip_parent->inode_no);
+        inodes.insert(ctx, ip, ".", ip->inode_no);
+    }
+
+    // set
+    inodes.lock(ip);
+    ip->entry.major = major;
+    ip->entry.minor = minor;
+    ip->entry.type = type;
+    ip->entry.num_links = 1;
+    inodes.sync(ctx, ip, TRUE);
+    inodes.insert(ctx, ip_parent, name, ip_no);
+
+    inodes.unlock(ip_parent);
+    inodes.put(ctx, ip_parent);
+    return ip;
 }
 
 define_syscall(openat, int dirfd, const char* path, int omode) {
@@ -269,8 +344,48 @@ define_syscall(chdir, const char* path) {
     // TODO
     // change the cwd (current working dictionary) of current process to 'path'
     // you may need to do some validations
+    OpContext ctx;
+    bcache.begin_op(&ctx);
+    auto cwd = namei(path, &ctx);
+    // if not find
+    if (cwd == NULL) {
+        bcache.end_op(&ctx);
+        return -1;
+    }
+
+    // if not a valid directory
+    inodes.lock(cwd);
+    if (cwd->entry.type != INODE_DIRECTORY) {
+        inodes.unlock(cwd);
+        inodes.put(&ctx, cwd);
+        bcache.end_op(&ctx);
+        return -1;
+    }
+    inodes.unlock(cwd);
+    inodes.put(&ctx, thisproc()->cwd);
+    thisproc()->cwd = cwd;
+    bcache.end_op(&ctx);
+    return 0;
 }
 
-define_syscall(pipe2, char int *fd, int flags) {
+define_syscall(pipe2, int *fd, int flags) {
     // TODO
+    flags = flags;
+    File* f0, *f1;
+    if (pipeAlloc(&f0, &f1) > 1) {
+        fd[0] = fdalloc(f0);
+        fd[1] = fdalloc(f1);
+        // if alloc failed
+        if (fd[0] == -1 || fd[1] == -1) {
+            if (fd[0] != -1) {
+                thisproc()->oftable.otable[fd[0]] = NULL;
+            }
+            fileclose(f0);
+            fileclose(f1);
+            return -1;
+        }
+        return 0;
+    } else {
+        return -1;
+    }
 }

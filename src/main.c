@@ -1,6 +1,7 @@
 #include <aarch64/intrinsic.h>
 #include <common/string.h>
 #include <kernel/init.h>
+#include <kernel/printk.h>
 
 static bool boot_secondary_cpus = false;
 

@@ -5,6 +5,8 @@
 #include <kernel/printk.h>
 #include <sys/stat.h>
 #include <common/sem.h>
+#include <kernel/sched.h>
+#include <kernel/console.h>
 
 // this lock mainly prevents concurrent access to inode list `head`, reference
 // count increment and decrement.
@@ -240,6 +242,9 @@ static usize inode_map(OpContext* ctx,
 // see `inode.h`.
 static usize inode_read(Inode* inode, u8* dest, usize offset, usize count) {
     InodeEntry* entry = &inode->entry;
+    if (entry->type == INODE_DEVICE) {
+        return console_read(inode, (char*)dest, count);
+    }
     if (count + offset > entry->num_bytes)
         count = entry->num_bytes - offset;
     usize end = offset + count;
@@ -274,6 +279,9 @@ static usize inode_write(OpContext* ctx,
                          usize offset,
                          usize count) {
     InodeEntry* entry = &inode->entry;
+    if (entry->type == INODE_DEVICE) {
+        return console_write(inode, (char*)src, count);
+    }
     usize end = offset + count;
     ASSERT(offset <= entry->num_bytes);
     ASSERT(end <= INODE_MAX_BYTES);
@@ -422,7 +430,44 @@ static const char* skipelem(const char* path, char* name) {
  */
 static Inode* namex(const char* path, int nameiparent, char* name, OpContext* ctx) {
     /* TODO: Lab10 Shell */
-    return 0;
+
+    Inode* ip;
+    if (path[0] == '/') {
+        ip = inode_share(inodes.root);
+    } else {
+        ip = inode_share(thisproc()->cwd);
+    }
+
+    path = skipelem(path, name);
+    while (path) {
+        inode_lock(ip);
+        if (ip->entry.type != INODE_DIRECTORY) {
+            inode_unlock(ip);
+            inode_put(ctx, ip);
+            return 0;
+        }
+        if (nameiparent != 0 && path[0] == '\0') {
+            inode_unlock(ip);
+            return ip;
+        }
+        usize inode_no = inode_lookup(ip, name, NULL);
+        if (inode_no == 0) {
+            inode_unlock(ip);
+            inode_put(ctx, ip);
+            return 0;
+        }
+        Inode* next_ip = inode_get(inode_no);
+        inode_unlock(ip);
+        inode_put(ctx, ip);
+        ip = next_ip;
+        path = skipelem(path, name);
+    }
+
+    if (nameiparent) {
+        inode_put(ctx, ip);
+        return 0;
+    }
+    return ip;
 }
 
 Inode* namei(const char* path, OpContext* ctx) {

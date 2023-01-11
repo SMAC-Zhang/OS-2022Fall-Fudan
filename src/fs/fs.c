@@ -10,7 +10,6 @@
 
 void init_filesystem() {
     init_block_device();
-
     const SuperBlock* sblock = get_super_block();
     init_bcache(sblock, &block_device);
     init_inodes(sblock, &bcache);
