@@ -43,35 +43,35 @@ int execve(const char *path, char *const argv[], char *const envp[]) {
 	Elf64_Phdr p_header;
 	init_pgdir(&pgdir);
 	u64 sp = 0;
-	for (Elf64_Half i = 0, offset = header.e_phoff; i < header.e_phnum; ++i, offset += sizeof(Elf64_Phdr)) {
+	for (Elf64_Half i = 0, offset = header.e_phoff; i < header.e_phnum; offset += sizeof(Elf64_Phdr), ++i) {
 		if (inodes.read(ip, (u8*)(&p_header), offset, sizeof(Elf64_Phdr)) < sizeof(Elf64_Phdr)) {
 			goto bad;
 		}
 		if (p_header.p_type == PT_LOAD) { // load and create a section
 			// set something
 			struct section* st = kalloc(sizeof(struct section));
+			if (p_header.p_flags == (PF_R | PF_X)) {
+				st->flags = (ST_FILE | ST_RO);
+			} else if (p_header.p_flags == (PF_R | PF_W)) {
+				st->flags = (ST_FILE);
+			} else {
+				kfree(st);
+				continue;
+			}
 			init_sleeplock(&(st->sleeplock));
 			st->begin = p_header.p_vaddr;
 			st->end = p_header.p_vaddr + p_header.p_memsz;
 			sp = MAX(sp, st->end);
 			init_list_node(&(st->stnode));
 			_insert_into_list(&(pgdir.section_head), &(st->stnode));
-			if (p_header.p_flags & (PF_R | PF_X)) {
-				st->flags = (ST_SWAP | ST_FILE | ST_RO);
-			} else if (p_header.p_flags & (PF_R | PF_W)) {
-				st->flags = (ST_FILE);
-			}
 
-			if (p_header.p_vaddr % PAGE_SIZE) {
-				goto bad;
-			}
 			// load 
-			u64 va = 0, va_end = p_header.p_vaddr + p_header.p_filesz;
-			for (va = p_header.p_vaddr; va < va_end; va += PAGE_SIZE) {
+			u64 va = p_header.p_vaddr, va_end = p_header.p_vaddr + p_header.p_filesz;
+			for (; va < va_end; va = PAGE_BASE(va + PAGE_SIZE)) {
 				void* ka = kalloc_page();
 				memset(ka, 0, PAGE_SIZE);
-				u64 count = MIN(va_end - va, (u64)PAGE_SIZE);
-				if (inodes.read(ip, (u8*)(ka), p_header.p_offset + (va - p_header.p_vaddr), count) < count) {
+				u64 count = MIN(va_end - va, (u64)PAGE_SIZE - (va - PAGE_BASE(va)));
+				if (inodes.read(ip, (u8*)((u64)ka + va - PAGE_BASE(va)), p_header.p_offset + (va - p_header.p_vaddr), count) < count) {
 					goto bad;
 				}
 				vmmap(&pgdir, va, ka, (st->flags & ST_RO) ? PTE_USER_DATA | PTE_RO : PTE_USER_DATA);
@@ -81,7 +81,6 @@ int execve(const char *path, char *const argv[], char *const envp[]) {
 			for (; va < p_header.p_vaddr + p_header.p_memsz; va += PAGE_SIZE) {
 				vmmap(&pgdir, va, get_zero_page(), PTE_USER_DATA | PTE_RO);
 			}
-
 			// // don't really load
 			// // only set file and lazy allocation
 			// st->fp = filealloc();
@@ -99,7 +98,6 @@ int execve(const char *path, char *const argv[], char *const envp[]) {
 			continue;
 		}
 	}
-	
 	inodes.unlock(ip);
 	inodes.put(&ctx, ip);
 	bcache.end_op(&ctx);
@@ -110,28 +108,32 @@ int execve(const char *path, char *const argv[], char *const envp[]) {
 		void* ka = kalloc_page();
 		vmmap(&pgdir, sp, ka, PTE_USER_DATA);
 	}
-	int argc = 0;
-	for (; argv[argc]; argc++) {
-
-	}
 	// left some space
 	sp -= 128;
-	for (int i = argc; i >= 0; --i) {
-		sp -= strlen(argv[i]) + 1;
-		copyout(&pgdir, (void*)sp, argv[i], strlen(argv[i]) + 1);
+	
+	int argc = 0;
+	if (argv) { // push argv
+		for (; argv[argc]; argc++) {
+
+		}
+		for (int i = argc; i >= 0; --i) {
+			sp -= strlen(argv[i]) + 1;
+			copyout(&pgdir, (void*)sp, argv[i], strlen(argv[i]) + 1);
+		}
 	}
+
+	// push argc
 	sp -= 8;
 	copyout(&pgdir, (void*)sp, &argc, sizeof(int));
 
-	auto old_pd = this->pgdir;
 	this->ucontext->x[0] = (u64)argc;
 	this->ucontext->x[1] = (u64)argv;
 	this->ucontext->sp = sp;
 	this->ucontext->elr = header.e_entry;
-	attach_pgdir(&pgdir);
+	free_pgdir(&(this->pgdir));
 	this->pgdir = pgdir;
-	free_pgdir(&old_pd);
-	
+	copy_sections(&(pgdir.section_head), &(this->pgdir.section_head));
+	attach_pgdir(&pgdir);
 	return 0;
 
 bad:

@@ -5,6 +5,8 @@
 #include <test/test.h>
 #include <driver/sd.h>
 #include <fs/cache.h>
+#include <kernel/paging.h>
+#include <kernel/mem.h>
 
 bool panic_flag;
 
@@ -23,6 +25,7 @@ NO_RETURN void idle_entry() {
 }
 
 extern void icode();
+extern void eicode();
 void kernel_entry() {
     printk("hello world %d\n", (int)sizeof(struct proc));
 
@@ -33,10 +36,15 @@ void kernel_entry() {
     do_rest_init();
 
     // TODO: map init.S to user space and trap_return to run icode
-    set_return_addr((u64)icode);
-    // auto this = thisproc();
-    // this->ucontext->elr = (u64)icode;
-    // trap_return();
+    struct section* st = (struct section*)kalloc(sizeof(struct section));
+    st->flags = ST_TEXT;
+    init_sleeplock(&(st->sleeplock));
+    st->begin = 0x8000;
+    st->end = 0x8000 + (u64)eicode - PAGE_BASE((u64)icode);
+    init_list_node(&(st->stnode));
+    _insert_into_list(&(thisproc()->pgdir.section_head), &(st->stnode));
+    vmmap(&(thisproc()->pgdir), 0x8000, (void*)PAGE_BASE((u64)(icode)), PTE_USER_DATA | PTE_RO);
+    set_return_addr((u64)0x8000 + (u64)icode - (PAGE_BASE((u64)icode)));
 }
 
 NO_INLINE NO_RETURN void _panic(const char* file, int line) {
