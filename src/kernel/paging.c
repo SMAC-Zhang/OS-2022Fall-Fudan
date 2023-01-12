@@ -219,8 +219,11 @@ void free_sections(struct pgdir* pd) {
 		if (section->flags & ST_SWAP) {
 			swapin(pd, section);
 		}
-		for (u64 i = section->begin; i < section->end; i += PAGE_SIZE) {
+		for (u64 i = PAGE_BASE(section->begin); i < section->end; i += PAGE_SIZE) {
 			auto pte_ptr = get_pte(pd, i, false);
+			if (pte_ptr == NULL) {
+				continue;
+			}
 			if (*pte_ptr & PTE_VALID) {
 				u64 ka = P2K(PTE_ADDRESS(*pte_ptr)); 
 				kfree_page((void*)ka);

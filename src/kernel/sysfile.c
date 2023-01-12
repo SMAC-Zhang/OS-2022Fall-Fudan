@@ -188,7 +188,7 @@ define_syscall(unlink, const char* path) {
     Inode *ip, *dp;
     DirEntry de;
     char name[FILE_NAME_MAX_LENGTH];
-    u32 off;
+    usize off;
     if (!user_strlen(path, 256))
         return -1;
     OpContext ctx;

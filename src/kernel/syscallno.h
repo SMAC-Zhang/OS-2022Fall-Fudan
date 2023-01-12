@@ -18,3 +18,4 @@
 #define SYS_exit_group 94
 #define SYS_execve 221
 #define SYS_wait4 260
+#define SYS_unlink 35
