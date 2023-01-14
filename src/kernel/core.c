@@ -26,6 +26,7 @@ NO_RETURN void idle_entry() {
 
 extern void icode();
 extern void eicode();
+extern void trap_return();
 void kernel_entry() {
     printk("hello world %d\n", (int)sizeof(struct proc));
 
@@ -36,15 +37,24 @@ void kernel_entry() {
     do_rest_init();
 
     // TODO: map init.S to user space and trap_return to run icode
+    auto this = thisproc();
+    this->cwd = inodes.share(inodes.root);
     struct section* st = (struct section*)kalloc(sizeof(struct section));
     st->flags = ST_TEXT;
     init_sleeplock(&(st->sleeplock));
     st->begin = 0x8000;
-    st->end = 0x8000 + (u64)eicode - PAGE_BASE((u64)icode);
+    st->end = 0x8000 + (u64)eicode - PAGE_BASE((u64)icode) + 1;
     init_list_node(&(st->stnode));
-    _insert_into_list(&(thisproc()->pgdir.section_head), &(st->stnode));
-    vmmap(&(thisproc()->pgdir), 0x8000, (void*)PAGE_BASE((u64)(icode)), PTE_USER_DATA | PTE_RO);
-    set_return_addr((u64)0x8000 + (u64)icode - (PAGE_BASE((u64)icode)));
+    _insert_into_list(&(this->pgdir.section_head), &(st->stnode));
+    
+    // map
+    for (u64 i = PAGE_BASE((u64)(icode)); i <= (u64)eicode; i += PAGE_SIZE) {
+        vmmap(&(this->pgdir), 0x8000 + (i - PAGE_BASE((u64)icode)), (void*)i, PTE_USER_DATA | PTE_RO);
+    }
+
+    // return
+    this->ucontext->elr = (u64)0x8000 + (u64)icode - (PAGE_BASE((u64)icode));
+    set_return_addr(trap_return);
 }
 
 NO_INLINE NO_RETURN void _panic(const char* file, int line) {

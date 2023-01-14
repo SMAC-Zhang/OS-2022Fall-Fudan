@@ -32,6 +32,9 @@ void syscall_entry(UserContext* context)
 // check if the virtual address [start,start+size) is READABLE by the current user process
 bool user_readable(const void* start, usize size) {
     // TODO
+    if (((u64)start >> 48) != 0) {
+        return true;
+    }
     auto this = thisproc();
     bool ok = FALSE;
     auto st_node = this->pgdir.section_head.next;

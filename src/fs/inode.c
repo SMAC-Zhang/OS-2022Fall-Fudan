@@ -263,7 +263,7 @@ static usize inode_read(Inode* inode, u8* dest, usize offset, usize count) {
             cnt = MIN(BLOCK_SIZE - offset % (usize)BLOCK_SIZE, (count));
             src = block->data + offset % (usize)BLOCK_SIZE;
         } else {
-            cnt = MIN((usize)BLOCK_SIZE, count);
+            cnt = MIN((usize)BLOCK_SIZE, count - i);
             src = block->data;
         }
         memcpy(dest, src, cnt);
@@ -299,7 +299,7 @@ static usize inode_write(OpContext* ctx,
             cnt = MIN(BLOCK_SIZE - offset % (usize)BLOCK_SIZE, (count));
             dest = block->data + offset % (usize)BLOCK_SIZE;
         } else {
-            cnt = MIN((usize)BLOCK_SIZE, count);
+            cnt = MIN((usize)BLOCK_SIZE, count - i);
             dest = block->data;
         }
         memcpy(dest, src, cnt);

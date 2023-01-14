@@ -23,7 +23,7 @@ static struct section* create_heap(ListNode* section_head, u64 begin) {
 	struct section* heap = (struct section*)kalloc(sizeof(struct section));
 	heap->flags = ST_HEAP;
 	init_sleeplock(&(heap->sleeplock));
-	heap->begin = PAGE_BASE(begin) + PAGE_SIZE;
+	heap->begin = begin;
 	heap->end = heap->begin;
 	init_list_node(&(heap->stnode));
 	_insert_into_list(section_head, &(heap->stnode));
@@ -46,8 +46,7 @@ u64 sbrk(i64 size) {
 	}
 	if (section_node == &(this->pgdir.section_head)) {
 		// if there is no heap, create it
-		section = container_of(section_node->next, struct section, stnode);
-		section = create_heap(&(this->pgdir.section_head), PAGE_BASE((begin + STACK_SIZE)) + 2 * PAGE_SIZE);
+		section = create_heap(&(this->pgdir.section_head), begin + PAGE_SIZE);
 	}
 
 	auto end = section->end;
@@ -237,7 +236,6 @@ void free_sections(struct pgdir* pd) {
 
 void copy_sections(ListNode* from_head, ListNode* to_head) {
 	ListNode* a = from_head->next, *b = to_head;
-	init_list_node(to_head);
 	while (a != from_head) {
 		// init
 		auto st = container_of(a, struct section, stnode);

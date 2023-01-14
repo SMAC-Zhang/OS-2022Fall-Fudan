@@ -181,14 +181,13 @@ int wait(int* exitcode, int* pid)
     _release_spinlock(&pid_pcb_lock);
     kfree(container_of(find_node, pid_map_pcb_t, node));
     
-    int ret = child->localpid;
+    int ret = child->pid;
     // free pid resource
     free_pid(&global_pid, child->pid);
     free_pid(&(this->container->local_pid), child->localpid);
 
     kfree_page(child->kstack);
     kfree(child);
-    
     _release_spinlock(&ptree_lock);
     return ret;
 }
@@ -352,12 +351,19 @@ int fork() {
 
     // copy pgdir
     copy_sections(&(this->pgdir.section_head), &(child->pgdir.section_head));
-    for (u64 i = 0; ; i += PAGE_SIZE) {
-        auto pte_ptr = get_pte(&(this->pgdir), i, false);
-        if (pte_ptr == NULL || !(*pte_ptr & PTE_VALID)) { // what if swapout?
-            break;
+    auto st = this->pgdir.section_head.next;
+    while (st != &(this->pgdir.section_head)) {
+        auto section = container_of(st, struct section, stnode);
+        for (u64 i = PAGE_BASE(section->begin); i < section->end; i += PAGE_SIZE) {
+            auto pte_ptr = get_pte(&(this->pgdir), i, false);
+            if (pte_ptr == NULL || !(*pte_ptr & PTE_VALID)) { // what if swapout?
+                break;
+            }
+            void* ka = kalloc_page();
+            memcpy(ka, (void*)P2K(PTE_ADDRESS(*pte_ptr)), PAGE_SIZE);
+            vmmap(&(child->pgdir), i, ka, PTE_FLAGS(*pte_ptr));
         }
-        vmmap(&(child->pgdir), i, (void*)PTE_ADDRESS((u64)*pte_ptr), PTE_FLAGS(*pte_ptr) | PTE_RO);
+        st = st->next;
     }
 
     start_proc(child, trap_return, 0);

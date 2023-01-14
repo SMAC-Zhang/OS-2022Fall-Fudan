@@ -22,6 +22,9 @@ static struct page page_cnt[(u64)PHYSTOP / (u64)PAGE_SIZE];
 static u64 tot_page_cnt;
 static void* zero_page;
 define_early_init(init_page) {
+    for (u64 p = P2K(0); p < PAGE_BASE((u64)&end) + PAGE_SIZE; p += PAGE_SIZE) {
+        inc_page_cnt((void*)p);
+    }
     for (u64 p = PAGE_BASE((u64)&end) + PAGE_SIZE; p < P2K(PHYSTOP); p += PAGE_SIZE) {
         add_to_queue(&pages, (QueueNode*)p);
         tot_page_cnt++;

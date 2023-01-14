@@ -4,6 +4,7 @@
 #include <aarch64/intrinsic.h>
 #include <kernel/paging.h>
 #include <kernel/sched.h>
+#include <kernel/printk.h>
 
 PTEntriesPtr get_pte(struct pgdir* pgdir, u64 va, bool alloc)
 {
@@ -125,12 +126,16 @@ int copyout(struct pgdir* pd, void* va, void *p, usize len){
     // TODO
     while (len > 0) {
         u64 n = len;
-        u64 max_n = PAGE_SIZE - ((u64)va - PAGE_BASE((u64)va));
+        u64 off = (u64)va - PAGE_BASE((u64)va);
+        u64 max_n = PAGE_SIZE - off;
         if (n > max_n) {
             n = max_n;
         }
         u64 pa = *get_pte(pd, (u64)va, TRUE);
-        memmove((void*)P2K(pa), p, n);
+        if (pa == 0) {
+            return -1;
+        }
+        memcpy((void*)(P2K(PTE_ADDRESS(pa)) + off), p, n);
         len -= n;
         p += n;
         va += n;
@@ -140,6 +145,9 @@ int copyout(struct pgdir* pd, void* va, void *p, usize len){
 
 void vmmap(struct pgdir* pd, u64 va, void* ka, u64 flags) {
     PTEntriesPtr pt3 = get_pte(pd, va, true);
+    if (flags != PTE_USER_DATA && flags != (PTE_USER_DATA | PTE_RO)) {
+        printk("dfs\n");
+    }
     *pt3 = (PTEntry)(K2P(ka) | flags);
     inc_page_cnt(ka);
 }

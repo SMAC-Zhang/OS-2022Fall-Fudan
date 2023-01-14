@@ -51,15 +51,18 @@ isize console_read(Inode *ip, char *dst, isize n) {
             }
         }
         char c = input.buf[input.r % INPUT_BUF];
+        input.r = (input.r + 1) % INPUT_BUF;
         if (c == C('D')) {
             break;
         }
         dst[i] = c;
-        input.r = (input.r + 1) % INPUT_BUF;
+        if (c == '\n') {
+            break;
+        }
     }
     _release_spinlock(&(input.lock));
     inodes.lock(ip);
-    return i;
+    return i + 1;
 }
 
 static void backspace() {
@@ -79,7 +82,7 @@ void console_intr(char (*getc)()) {
     getc = getc;
     while ((c = uart_get_char()) != 0xff) {
         switch (c) {
-            case '\b': {
+            case 127: {
                 if (input.e != input.w) {
                     backspace();
                 }
@@ -91,30 +94,22 @@ void console_intr(char (*getc)()) {
                 }
                 break;
             }
-            case C('D'): 
-                if ((input.r + INPUT_BUF) % INPUT_BUF != input.e) {
-                    input.buf[input.e] = c;
-                    input.e = (input.e + 1) % INPUT_BUF;
-                } else {
-                    continue;
-                }
-                input.w = input.e;
-                post_all_sem(&(input.sem));
-                uart_put_char(c);
-                break;
             case C('C'): 
                 ASSERT(kill(thisproc()->pid) == 0);
                 uart_put_char(c);
                 break;
             default: 
-                if ((input.r + INPUT_BUF) % INPUT_BUF != input.e) {
+                if (input.e - input.r < INPUT_BUF) {
+                    if (c == '\r') {
+                        c = '\n';
+                    }
                     input.buf[input.e] = c;
                     input.e = (input.e + 1) % INPUT_BUF;
-                    if (c == '\n') {
-                        input.w = input.e;
-                        post_all_sem(&(input.sem));
-                    }
                     uart_put_char(c);
+                    if (c == '\n' || c == C('D') || input.e == input.r + INPUT_BUF) {
+                        input.w = input.e;
+                    }
+                    post_all_sem(&(input.sem));
                 } else {
                     continue;
                 }
