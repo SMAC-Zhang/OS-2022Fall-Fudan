@@ -132,6 +132,18 @@ NO_RETURN void exit(int code) {
     }
     // free resource
     free_pgdir(&(this->pgdir));
+    // free file
+    for (int i = 0; i < NOFILE; ++i) {
+        if (this->oftable.otable[i]) {
+            fileclose(this->oftable.otable[i]);
+            this->oftable.otable[i] = NULL;
+        }
+    }
+    OpContext ctx;
+    bcache.begin_op(&ctx);
+    inodes.put(&ctx, this->cwd);
+    bcache.end_op(&ctx);
+    this->cwd = NULL;
     
     // notify parent proc
     _detach_from_list(&(this->ptnode));
@@ -181,7 +193,7 @@ int wait(int* exitcode, int* pid)
     _release_spinlock(&pid_pcb_lock);
     kfree(container_of(find_node, pid_map_pcb_t, node));
     
-    int ret = child->pid;
+    int ret = child->localpid;
     // free pid resource
     free_pid(&global_pid, child->pid);
     free_pid(&(this->container->local_pid), child->localpid);
@@ -367,5 +379,5 @@ int fork() {
     }
 
     start_proc(child, trap_return, 0);
-    return child->pid;
+    return child->localpid;
 }

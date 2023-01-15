@@ -4,6 +4,7 @@
 #include<kernel/sched.h>
 #include<driver/uart.h>
 #include<driver/interrupt.h>
+#include<common/string.h>
 
 #define INPUT_BUF 128
 struct {
@@ -57,12 +58,13 @@ isize console_read(Inode *ip, char *dst, isize n) {
         }
         dst[i] = c;
         if (c == '\n') {
+            i++;
             break;
         }
     }
     _release_spinlock(&(input.lock));
     inodes.lock(ip);
-    return i + 1;
+    return i;
 }
 
 static void backspace() {
@@ -74,6 +76,13 @@ static void backspace() {
     uart_put_char('\b'); 
     uart_put_char(' ');
     uart_put_char('\b');
+}
+
+static void clear_buf() {
+    memset(input.buf, 0, INPUT_BUF);
+    input.r = 0;
+    input.w = 0;
+    input.e = 0;
 }
 
 void console_intr(char (*getc)()) {
@@ -95,8 +104,14 @@ void console_intr(char (*getc)()) {
                 break;
             }
             case C('C'): 
-                ASSERT(kill(thisproc()->pid) == 0);
-                uart_put_char(c);
+                if (thisproc()->pid > 2) {
+                    ASSERT(kill(thisproc()->pid) == 0);
+                }
+                uart_put_char('^');
+                uart_put_char('C');
+                uart_put_char('\n');
+                uart_put_char('$');
+                clear_buf();
                 break;
             default: 
                 if (input.e - input.r < INPUT_BUF) {
