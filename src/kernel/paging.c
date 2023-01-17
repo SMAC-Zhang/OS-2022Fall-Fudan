@@ -51,14 +51,15 @@ u64 sbrk(i64 size) {
 
 	auto end = section->end;
 	if (size >= 0) {
-		section->end += size * PAGE_SIZE;
+		section->end += size;
 	} else {
 		size = -size;
-		if ((u64)size * PAGE_SIZE <= section->end - section->begin) {
+		if ((u64)size <= section->end - section->begin) {
 			if (section->flags & ST_SWAP) {
 				swapin(&(this->pgdir), section);
 			}
-			for (u64 i = section->end - size * PAGE_SIZE; i < section->end; i += PAGE_SIZE) {
+			u64 va_begin = (section->end - size) % PAGE_SIZE ? PAGE_BASE(section->end - size) + PAGE_SIZE: PAGE_BASE(section->end - size);
+			for (u64 i = va_begin; i < section->end; i += PAGE_SIZE) {
 				auto pte_ptr = get_pte(&(this->pgdir), i, false);
 				if ((pte_ptr != NULL) && (PTE_FLAGS(*pte_ptr) & PTE_VALID)) {
 					u64 ka = P2K(PTE_ADDRESS(*pte_ptr));
@@ -66,7 +67,7 @@ u64 sbrk(i64 size) {
 					*pte_ptr = 0;
 				}
 			}
-			section->end -= size * PAGE_SIZE;
+			section->end -= size;
 		} else {
 			printk("%lld, %lld, %lld\n", section->begin, section->end, size);
 			PANIC();

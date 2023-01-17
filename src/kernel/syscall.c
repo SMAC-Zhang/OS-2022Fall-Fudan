@@ -24,6 +24,7 @@ void syscall_entry(UserContext* context)
         if (func != NULL) {
             context->x[0] = ((u64(*)(u64, u64, u64, u64, u64, u64))func)(x0, x1, x2, x3, x4, x5);
         } else {
+            printk("syscall %lld not find\n", id);
             PANIC();
         }
     }
