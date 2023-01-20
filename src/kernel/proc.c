@@ -379,5 +379,6 @@ int fork() {
     }
 
     start_proc(child, trap_return, 0);
+    arch_tlbi_vmalle1is();
     return child->localpid;
 }

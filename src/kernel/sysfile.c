@@ -23,6 +23,7 @@
 #include <fs/pipe.h>
 #include <common/string.h>
 #include <fs/inode.h>
+#include <kernel/printk.h>
 
 struct iovec {
     void* iov_base; /* Starting address. */
@@ -445,7 +446,7 @@ define_syscall(pipe2, int *fd, int flags) {
     // TODO
     flags = flags;
     File* f0, *f1;
-    if (pipeAlloc(&f0, &f1) > 1) {
+    if (pipeAlloc(&f0, &f1) == 1) {
         fd[0] = fdalloc(f0);
         fd[1] = fdalloc(f1);
         // if alloc failed
